@@ -15,8 +15,8 @@ run_without_pythonpath() {
 }
 
 if [ ! -r "$INSTALLER" ]; then
-    echo "Official Miniconda installer not found: $INSTALLER" >&2
-    exit 1
+    echo "Official Miniconda installer not found; downloading it now."
+    "$ROOT_DIR/vendor/download-installers.sh" miniconda
 fi
 
 # 默认使用非交互安装，减少入口脚本需要传入的参数

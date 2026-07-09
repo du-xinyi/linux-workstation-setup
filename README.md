@@ -86,11 +86,13 @@ Node.js、Rust 和 Miniconda 安装脚本会分别将 npm、Cargo 和 Conda 所�
 其他 Shell 回退到 `~/.profile`。如需修改默认目录，仍可向官方安装器传入
 `-p` 参数。
 
-Rust 和 Miniconda 组件依赖 `vendor/` 中的上游安装器。运行以下命令可从官方
-地址下载：
+Rust 和 Miniconda 组件依赖 `vendor/` 中的上游安装器。安装器不存在时，对应
+组件会自动从官方地址下载。也可以提前手动下载：
 
 ```bash
 ./vendor/download-installers.sh
+./vendor/download-installers.sh rust
+./vendor/download-installers.sh miniconda
 ```
 
 Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 维护分支

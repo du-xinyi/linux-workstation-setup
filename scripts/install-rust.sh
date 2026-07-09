@@ -32,8 +32,8 @@ if command -v rustup >/dev/null 2>&1 && [ -e "$HOME/.rustup/settings.toml" ]; th
     rustup default stable
 else
     if [ ! -r "$INSTALLER" ]; then
-        echo "Official Rust installer not found: $INSTALLER" >&2
-        exit 1
+        echo "Official Rust installer not found; downloading it now."
+        "$ROOT_DIR/vendor/download-installers.sh" rust
     fi
 
     sh "$INSTALLER" "${rustup_args[@]}"
