@@ -13,5 +13,9 @@ Thumbs.db
 .agents/
 .codex/
 
-# 上游安装器体积较大，按需放到本地 vendor 目录
-vendor/*.sh
+# 上游安装器由 vendor/download-installers.sh 下载
+vendor/Miniconda3-latest-Linux-x86_64.sh
+vendor/rustup-init.sh
+
+# Miniconda 安装器体积较大，保留为本地 vendor 文件
+vendor/Miniconda3-latest-Linux-x86_64.sh

@@ -16,7 +16,8 @@
 │   └── lib/
 │       └── common.sh              # 安装脚本公共函数
 └── vendor/                        # 本地上游安装器目录
-    └── README.md
+    ├── README.md
+    └── download-installers.sh     # 下载上游安装器
 ```
 
 ## 使用
@@ -85,6 +86,13 @@ Node.js、Rust 和 Miniconda 安装脚本会分别将 npm、Cargo 和 Conda 所�
 其他 Shell 回退到 `~/.profile`。如需修改默认目录，仍可向官方安装器传入
 `-p` 参数。
 
+Rust 和 Miniconda 组件依赖 `vendor/` 中的上游安装器。运行以下命令可从官方
+地址下载：
+
+```bash
+./vendor/download-installers.sh
+```
+
 Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 维护分支
 中的最新补丁版，并根据当前 Shell 写入 rbenv 初始化配置。可通过
 `RUBY_SERIES`、`RUBY_VERSION` 和 `RBENV_ROOT` 覆盖默认分支、Ruby 版本与安装
@@ -92,7 +100,8 @@ Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 
 
 ## 维护约定
 
-- `vendor/` 用于本地保存上游发布的原始安装器，安装器文件不提交到 Git 仓库。
+- `vendor/` 用于保存上游发布的原始安装器。安装器文件不提交到 Git 仓库，
+  通过 `vendor/download-installers.sh` 下载。
 - `scripts/` 保存环境检查、默认配置和对官方安装器的封装。
 - `scripts/lib/common.sh` 保存跨安装器复用的通用函数，例如系统检查、sudo
   检查、步骤输出和 Shell 配置文件选择。
