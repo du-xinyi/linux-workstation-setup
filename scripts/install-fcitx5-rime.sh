@@ -90,21 +90,6 @@ patch:
   menu/page_size: 9
 EOF
 
-print_step 8 "Adjusting Fcitx 5 preedit display"
-readonly FCITX_CONFIG="$HOME/.config/fcitx5/config"
-mkdir -p "$(dirname "$FCITX_CONFIG")"
-if [ -f "$FCITX_CONFIG" ]; then
-    if grep -q '^PreeditEnabledByDefault=' "$FCITX_CONFIG"; then
-        sed -i 's/^PreeditEnabledByDefault=.*/PreeditEnabledByDefault=False/' "$FCITX_CONFIG"
-    elif grep -q '^\[Behavior\]$' "$FCITX_CONFIG"; then
-        sed -i '/^\[Behavior\]$/a PreeditEnabledByDefault=False' "$FCITX_CONFIG"
-    else
-        printf '\n[Behavior]\nPreeditEnabledByDefault=False\n' >> "$FCITX_CONFIG"
-    fi
-else
-    printf '[Behavior]\nPreeditEnabledByDefault=False\n' > "$FCITX_CONFIG"
-fi
-
 echo
 echo "======================================"
 echo "Installation complete"
