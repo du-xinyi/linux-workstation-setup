@@ -12,6 +12,7 @@ Thumbs.db
 # Codex/agent 本地状态
 .agents/
 .codex/
+.omo/
 
 # 上游安装器由 vendor/download-installers.sh 下载
 vendor/Miniconda3-latest-Linux-x86_64.sh
