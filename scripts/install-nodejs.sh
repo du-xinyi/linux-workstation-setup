@@ -9,7 +9,7 @@ readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=14
+readonly SETUP_STEP_TOTAL=13
 
 # 默认值均可通过同名环境变量覆盖
 readonly NODE_MAJOR="${NODE_MAJOR:-24}"
@@ -27,10 +27,7 @@ readonly GH_LIST="/etc/apt/sources.list.d/github-cli.list"
 readonly OMO_PLATFORM="${OMO_PLATFORM:-both}"
 readonly BUN_DIR="${BUN_DIR:-$HOME/.bun}"
 
-# 各平台使用的插件选择器
-readonly SUPERPOWERS_OPENCODE_SPEC="superpowers@git+https://github.com/obra/superpowers.git"
-readonly SUPERPOWERS_CODEX_SELECTOR="superpowers@openai-curated"
-
+# MCP 服务器
 # 无需鉴权的 MCP 端点
 readonly MCP_CONTEXT7_URL="https://mcp.context7.com/mcp"
 readonly MCP_PLAYWRIGHT_SPEC="@playwright/mcp@latest"
@@ -190,19 +187,6 @@ edit_jsonc_config() {
             ' "$tmp" >"$next"
             mv "$next" "$path"
             echo "Overrode $count agent/category models -> $model (fallback: $fallback)"
-            ;;
-        ensure-plugin)
-            local spec="$1"
-            if jq -e --arg spec "$spec" '(.plugin | type) == "array" and (.plugin | index($spec) != null)' "$tmp" >/dev/null; then
-                echo "\"$spec\" already present in $path"
-            else
-                jq --arg spec "$spec" '
-                    if (.plugin | type) == "array" then . else .plugin = [] end
-                    | .plugin += [$spec]
-                ' "$tmp" >"$next"
-                mv "$next" "$path"
-                echo "Added \"$spec\" to $path"
-            fi
             ;;
         ensure-mcp)
             local context7_url="$1"
@@ -523,33 +507,10 @@ if [ "$omo_needs_bun" = "true" ]; then
 fi
 printf 'Platform:   %s\n' "$OMO_PLATFORM"
 
-# superpowers
-# 按 OMO_PLATFORM 安装到对应平台
-
-print_step 13 "Installing superpowers ($OMO_PLATFORM edition)"
-opencode_config=""
-
-if omo_installs_opencode; then
-    # OpenCode 插件保存在 JSON/JSONC 的 plugin 数组中
-    opencode_config="$(opencode_config_file)"
-    mkdir -p "$(dirname "$opencode_config")"
-
-    edit_jsonc_config ensure-plugin "$opencode_config" "$SUPERPOWERS_OPENCODE_SPEC"
-fi
-
-if omo_installs_codex; then
-    # 第二列是安装状态，需精确匹配以避免误判 not installed
-    if codex plugin list 2>/dev/null | awk '$1=="superpowers@openai-curated" && $2=="installed"{found=1} END{exit !found}'; then
-        echo "superpowers already installed for Codex CLI; skipping."
-    else
-        codex plugin add "$SUPERPOWERS_CODEX_SELECTOR"
-    fi
-fi
-
 # MCP 服务器
 # Context7 与 Playwright 均无需凭据
 
-print_step 14 "Installing MCP servers: Context7 / Playwright ($OMO_PLATFORM edition)"
+print_step 13 "Installing MCP servers: Context7 / Playwright ($OMO_PLATFORM edition)"
 
 if omo_installs_opencode; then
     if [ -z "$opencode_config" ]; then
