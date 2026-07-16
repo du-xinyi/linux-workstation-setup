@@ -4,33 +4,58 @@ set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
 readonly SETUP_STEP_TOTAL=14
 
-# 以下安装参数可通过同名环境变量覆盖
+# 默认值均可通过同名环境变量覆盖
 readonly NODE_MAJOR="${NODE_MAJOR:-24}"
 readonly NPM_VERSION="${NPM_VERSION:-latest}"
 readonly NPM_DIR="${NPM_DIR:-$HOME/.local/npm}"
 readonly NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org}"
+
 readonly KEYRING_DIR="/etc/apt/keyrings"
 readonly NODESOURCE_KEYRING="${KEYRING_DIR}/nodesource.gpg"
 readonly NODESOURCE_LIST="/etc/apt/sources.list.d/nodesource.list"
 readonly GH_KEYRING="${KEYRING_DIR}/githubcli-archive-keyring.gpg"
 readonly GH_LIST="/etc/apt/sources.list.d/github-cli.list"
-# oh-my-openagent 安装平台：both（默认）、opencode、codex
+
+# oh-my-openagent 目标平台：both、opencode 或 codex
 readonly OMO_PLATFORM="${OMO_PLATFORM:-both}"
 readonly BUN_DIR="${BUN_DIR:-$HOME/.bun}"
-# superpowers 插件说明符
+
+# 各平台使用的插件选择器
 readonly SUPERPOWERS_OPENCODE_SPEC="superpowers@git+https://github.com/obra/superpowers.git"
 readonly SUPERPOWERS_CODEX_SELECTOR="superpowers@openai-curated"
-# MCP 服务器配置：Context7（远程）、Playwright（本地 stdio）
+
+# 无需鉴权的 MCP 端点
 readonly MCP_CONTEXT7_URL="https://mcp.context7.com/mcp"
 readonly MCP_PLAYWRIGHT_SPEC="@playwright/mcp@latest"
 
-# 解析 OpenCode 配置文件路径：优先已存在的 .jsonc / .json，否则默认 .jsonc
+# Codex 基础配置，可通过同名环境变量覆盖
+
+# 默认模型
+readonly CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
+
+# 推理强度
+readonly CODEX_REASONING="${CODEX_REASONING:-high}"
+
+# 服务等级
+readonly CODEX_SERVICE_TIER="${CODEX_SERVICE_TIER:-default}"
+
+# 命令审批策略：untrusted、on-request（推荐）或 never
+readonly CODEX_APPROVAL="${CODEX_APPROVAL:-on-request}"
+
+# 文件系统沙箱：read-only、workspace-write（推荐）或 danger-full-access
+readonly CODEX_SANDBOX="${CODEX_SANDBOX:-workspace-write}"
+
+# workspace-write 沙箱的网络访问开关
+readonly CODEX_NETWORK="${CODEX_NETWORK:-enabled}"
+
+# 优先沿用已有 OpenCode 配置格式，新配置默认使用 JSONC
 opencode_config_file() {
     local dir="$HOME/.config/opencode"
     local candidate
@@ -41,6 +66,294 @@ opencode_config_file() {
         fi
     done
     printf '%s\n' "$dir/opencode.jsonc"
+}
+
+omo_installs_opencode() {
+    [ "$OMO_PLATFORM" = "opencode" ] || [ "$OMO_PLATFORM" = "both" ]
+}
+
+omo_installs_codex() {
+    [ "$OMO_PLATFORM" = "codex" ] || [ "$OMO_PLATFORM" = "both" ]
+}
+
+strip_jsonc_comments() {
+    local path="$1"
+
+    if [ ! -f "$path" ]; then
+        printf '{}\n'
+        return 0
+    fi
+
+    awk '
+    {
+        out = ""
+        for (i = 1; i <= length($0); i++) {
+            c = substr($0, i, 1)
+            n = substr($0, i + 1, 1)
+
+            if (in_block) {
+                if (c == "*" && n == "/") {
+                    in_block = 0
+                    i++
+                }
+                continue
+            }
+
+            if (in_str) {
+                out = out c
+                if (escaped) {
+                    escaped = 0
+                } else if (c == "\\") {
+                    escaped = 1
+                } else if (c == quote) {
+                    in_str = 0
+                }
+                continue
+            }
+
+            if (c == "\"" || c == "'\''") {
+                in_str = 1
+                quote = c
+                out = out c
+                continue
+            }
+            if (c == "/" && n == "/") {
+                break
+            }
+            if (c == "/" && n == "*") {
+                in_block = 1
+                i++
+                continue
+            }
+
+            out = out c
+        }
+        print out
+    }' "$path"
+}
+
+jsonc_to_temp_json() {
+    local path="$1"
+    local out="$2"
+
+    strip_jsonc_comments "$path" \
+        | jq -s 'if length == 0 then {} elif length == 1 and (.[0] | type) == "object" then .[0] elif length == 1 then {} else error("expected one JSON object") end' >"$out" || {
+        echo "Failed to parse $path as JSON/JSONC." >&2
+        return 1
+    }
+}
+
+edit_jsonc_config() {
+    local mode="$1"
+    local path="$2"
+    shift 2
+    local tmp
+    local next
+
+    tmp="$(mktemp)"
+    next="$(mktemp)"
+    if ! jsonc_to_temp_json "$path" "$tmp"; then
+        rm -f "$tmp" "$next"
+        return 1
+    fi
+
+    case "$mode" in
+        override-omo-models)
+            local model="$1"
+            local fallback="$2"
+            local count
+            count="$(jq '[
+                (if (.agents | type) == "object" then .agents[] else empty end),
+                (if (.categories | type) == "object" then .categories[] else empty end)
+            ] | map(select(type == "object")) | length' "$tmp")"
+            jq --arg model "$model" --arg fallback "$fallback" '
+                (if (.agents | type) == "object" then
+                    .agents |= with_entries(
+                        if (.value | type) == "object" then
+                            .value.model = $model
+                            | .value.fallback_models = [$fallback]
+                        else
+                            .
+                        end
+                    )
+                else . end)
+                | (if (.categories | type) == "object" then
+                    .categories |= with_entries(
+                        if (.value | type) == "object" then
+                            .value.model = $model
+                            | .value.fallback_models = [$fallback]
+                        else
+                            .
+                        end
+                    )
+                else . end)
+            ' "$tmp" >"$next"
+            mv "$next" "$path"
+            echo "Overrode $count agent/category models -> $model (fallback: $fallback)"
+            ;;
+        ensure-plugin)
+            local spec="$1"
+            if jq -e --arg spec "$spec" '(.plugin | type) == "array" and (.plugin | index($spec) != null)' "$tmp" >/dev/null; then
+                echo "\"$spec\" already present in $path"
+            else
+                jq --arg spec "$spec" '
+                    if (.plugin | type) == "array" then . else .plugin = [] end
+                    | .plugin += [$spec]
+                ' "$tmp" >"$next"
+                mv "$next" "$path"
+                echo "Added \"$spec\" to $path"
+            fi
+            ;;
+        ensure-mcp)
+            local context7_url="$1"
+            local playwright_spec="$2"
+            local missing_context7
+            local missing_playwright
+            missing_context7="$(jq 'if ((.mcp | type) == "object" and (.mcp | has("context7"))) then 0 else 1 end' "$tmp")"
+            missing_playwright="$(jq 'if ((.mcp | type) == "object" and (.mcp | has("playwright"))) then 0 else 1 end' "$tmp")"
+            jq --arg context7_url "$context7_url" --arg playwright_spec "$playwright_spec" '
+                if (.mcp | type) == "object" then . else .mcp = {} end
+                | if (.mcp | has("context7")) then . else
+                    .mcp.context7 = {
+                        "type": "remote",
+                        "url": $context7_url,
+                        "enabled": true
+                    }
+                end
+                | if (.mcp | has("playwright")) then . else
+                    .mcp.playwright = {
+                        "type": "local",
+                        "command": ["npx", "-y", $playwright_spec],
+                        "enabled": true
+                    }
+                end
+            ' "$tmp" >"$next"
+            if [ "$missing_context7" -eq 1 ]; then
+                echo "- mcp.context7"
+            fi
+            if [ "$missing_playwright" -eq 1 ]; then
+                echo "- mcp.playwright"
+            fi
+            if [ "$missing_context7" -eq 1 ] || [ "$missing_playwright" -eq 1 ]; then
+                mv "$next" "$path"
+                echo "Updated MCP servers in $path"
+            else
+                echo "MCP servers already configured in $path"
+            fi
+            ;;
+        *)
+            rm -f "$tmp" "$next"
+            echo "Unknown config edit mode: $mode" >&2
+            return 1
+            ;;
+    esac
+
+    rm -f "$tmp" "$next"
+}
+
+configure_codex_base() {
+    local codex_cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    local pair
+    local key
+    local val
+    local names
+    local network_value
+    local network_tmp
+    local codex_pairs=(
+        "model|$CODEX_MODEL"
+        "model_reasoning_effort|$CODEX_REASONING"
+        "service_tier|$CODEX_SERVICE_TIER"
+        "approval_policy|$CODEX_APPROVAL"
+        "sandbox_mode|$CODEX_SANDBOX"
+    )
+    local codex_missing=()
+
+    case "$CODEX_NETWORK" in
+        enabled) network_value="true" ;;
+        disabled) network_value="false" ;;
+        *)
+            echo "Invalid CODEX_NETWORK: $CODEX_NETWORK (expected enabled or disabled)" >&2
+            return 1
+            ;;
+    esac
+
+    mkdir -p "$(dirname "$codex_cfg")"
+    [ -f "$codex_cfg" ] || : > "$codex_cfg"
+
+    for pair in "${codex_pairs[@]}"; do
+        key="${pair%%|*}"
+        val="${pair#*|}"
+        if grep -qE "^${key} =" "$codex_cfg"; then
+            sed -i -E "s|^${key} = .*|${key} = \"${val}\"|" "$codex_cfg"
+        else
+            codex_missing+=("$pair")
+        fi
+    done
+
+    # 倒序插入缺失键，保证最终顺序与 codex_pairs 一致
+    for ((i=${#codex_missing[@]}-1; i>=0; i--)); do
+        key="${codex_missing[i]%%|*}"
+        val="${codex_missing[i]#*|}"
+        sed -i "1i${key} = \"${val}\"" "$codex_cfg"
+    done
+
+    # 网络权限属于 workspace-write 沙箱表，顶层同名字符串不会被 Codex 识别
+    network_tmp="$(mktemp)"
+    awk -v value="$network_value" '
+        BEGIN {
+            before_first_table = 1
+            in_workspace_table = 0
+            workspace_table_found = 0
+            network_written = 0
+        }
+
+        /^\[/ {
+            if (in_workspace_table && !network_written) {
+                print "network_access = " value
+                network_written = 1
+            }
+
+            before_first_table = 0
+            in_workspace_table = ($0 == "[sandbox_workspace_write]")
+            if (in_workspace_table) {
+                workspace_table_found = 1
+            }
+
+            print
+            next
+        }
+
+        before_first_table && /^network_access[[:space:]]*=/ {
+            next
+        }
+
+        in_workspace_table && /^network_access[[:space:]]*=/ {
+            print "network_access = " value
+            network_written = 1
+            next
+        }
+
+        { print }
+
+        END {
+            if (in_workspace_table && !network_written) {
+                print "network_access = " value
+            } else if (!workspace_table_found) {
+                print ""
+                print "[sandbox_workspace_write]"
+                print "network_access = " value
+            }
+        }
+    ' "$codex_cfg" >"$network_tmp"
+    mv "$network_tmp" "$codex_cfg"
+
+    if [ "${#codex_missing[@]}" -gt 0 ]; then
+        names=""
+        for pair in "${codex_missing[@]}"; do names="$names ${pair%%|*}"; done
+        echo "Codex base config -> $codex_cfg (added:$names)"
+    else
+        echo "Codex base config -> $codex_cfg (all present)"
+    fi
 }
 
 echo "======================================"
@@ -58,11 +371,12 @@ sudo apt-get install -y \
     curl \
     ca-certificates \
     gnupg \
-    build-essential
+    build-essential \
+    jq
 
 print_step 3 "Adding the NodeSource Node.js ${NODE_MAJOR}.x repository"
 
-# 单独安装签名密钥并使用 signed-by 限制密钥作用范围
+# 将 NodeSource 签名密钥限制在该 apt 源范围内
 sudo install -d -m 0755 "$KEYRING_DIR"
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
     | gpg --dearmor \
@@ -82,7 +396,7 @@ npm config set prefix "$NPM_DIR"
 SHELL_RC="$(select_shell_rc)"
 
 if [ "$NPM_DIR" = "$HOME/.local/npm" ]; then
-    readonly PATH_LINE='export PATH="$HOME/.local/npm/bin:$PATH"'
+    readonly PATH_LINE="export PATH=\"\$HOME/.local/npm/bin:\$PATH\""
 else
     readonly PATH_LINE="export PATH=\"${NPM_DIR}/bin:\$PATH\""
 fi
@@ -104,7 +418,7 @@ echo "npm registry: $NPM_REGISTRY"
 
 print_step 7 "Installing development and AI CLI tools"
 npm install -g "npm@${NPM_VERSION}"
-# 仅允许确实需要生命周期脚本的包执行安装脚本（@ast-grep/cli 的 postinstall 用于放置原生二进制）
+# 仅允许确实需要生命周期脚本的包运行安装脚本
 npm install -g --allow-scripts=opencode-ai,yarn,@ast-grep/cli \
     pnpm \
     yarn \
@@ -129,9 +443,9 @@ printf 'Codex:      '; codex --version || true
 printf 'OpenCode:   '; opencode --version || true
 printf 'ast-grep:   '; sg --version || true
 
-# ── oh-my-openagent ──────────────────────────────────────────────
-# 安装在 Node.js/npm 之后，OpenCode 与 Codex CLI 此时均已就绪。
-# 组件名之后的参数（如 --no-tui --claude=max20）原样透传给官方安装器。
+# oh-my-openagent
+# 在 Node/npm 之后安装，确保 OpenCode 与 Codex 已在 PATH 中
+# 组件名之后的参数会原样透传给上游安装器
 
 omo_needs_bun=false
 case "$OMO_PLATFORM" in
@@ -155,8 +469,7 @@ if [ "$omo_needs_bun" = "true" ]; then
         curl -fsSL https://bun.sh/install | bash
         bun_bin="$BUN_DIR/bin/bun"
     fi
-    # 把 bun 加入当前进程 PATH，使 oh-my-openagent 子进程能 spawnSync 到 bun
-    # （否则会回退到 node CLI 入口，导致 ast-grep 等 skill 的 provisioning 被跳过）
+    # 确保子进程能找到 bun，避免部分 OMO provisioning 回退到 node 路径
     case ":${PATH:-}:" in
         *":$BUN_DIR/bin:"*) ;;
         *) export PATH="$BUN_DIR/bin:${PATH:-}" ;;
@@ -165,18 +478,16 @@ if [ "$omo_needs_bun" = "true" ]; then
 fi
 
 print_step 10 "Installing oh-my-openagent ($OMO_PLATFORM edition)"
-# 让 oh-my-openagent 直接用已装的 sg，避免其内置 provisioning 因上游路径 bug 失败
+# 复用已验证可用的 ast-grep 二进制，避开 OMO provisioning 路径问题
 if [ -x "$NPM_DIR/bin/sg" ]; then
     export OMO_AST_GREP_SG_PATH="$NPM_DIR/bin/sg"
 fi
-# 组件名之后的参数（如 --claude=max20）原样透传给官方安装器，后出现的同名参数生效。
-# 非交互默认订阅：智谱 Z.ai Coding Plan（GLM）；claude/gemini/copilot 为 --no-tui 必填项，全 no。
+# 这里不传订阅参数，后面统一修正生成的 OpenCode 模型前缀
 case "$OMO_PLATFORM" in
     opencode|both)
         "$bun_bin" x oh-my-openagent install --platform="$OMO_PLATFORM" \
             --no-tui \
             --claude=no --gemini=no --copilot=no \
-            --zai-coding-plan=yes \
             --skip-auth \
             "$@"
         ;;
@@ -185,54 +496,17 @@ case "$OMO_PLATFORM" in
         ;;
 esac
 
-# 安装器写错 provider 前缀（zai- 应为 zhipuai-）且默认兜底到不可用的 opencode/gpt-5-nano，故统一覆盖：GLM-5.2 主、DeepSeek V4 Pro 备。
 omo_config="$HOME/.config/opencode/oh-my-openagent.json"
 [ -f "$omo_config" ] || omo_config="$HOME/.config/opencode/oh-my-openagent.jsonc"
 if [ -f "$omo_config" ]; then
-    node - "$omo_config" "${OMO_MODEL:-zhipuai-coding-plan/glm-5.2}" "${OMO_FALLBACK_MODEL:-deepseek/deepseek-v4-pro}" <<'NODE'
-const fs = require('fs');
-const path = process.argv[2];
-const model = process.argv[3];
-const fallback = process.argv[4];
-
-function stripJsonc(s) {
-    let out = '', i = 0, inStr = false, strCh = '';
-    while (i < s.length) {
-        const c = s[i], next = s[i + 1];
-        if (inStr) {
-            out += c;
-            if (c === '\\') { out += (next ?? ''); i += 2; continue; }
-            if (c === strCh) inStr = false;
-            i += 1; continue;
-        }
-        if (c === '"' || c === "'") { inStr = true; strCh = c; out += c; i += 1; continue; }
-        if (c === '/' && next === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
-        if (c === '/' && next === '*') { i += 2; while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue; }
-        out += c; i += 1;
-    }
-    return out;
-}
-
-const obj = JSON.parse(stripJsonc(fs.readFileSync(path, 'utf8')));
-let n = 0;
-for (const sect of ['agents', 'categories']) {
-    if (obj[sect] && typeof obj[sect] === 'object') {
-        for (const a of Object.values(obj[sect])) {
-            if (a && typeof a === 'object') {
-                a.model = model;
-                a.fallback_models = [fallback];
-                n += 1;
-            }
-        }
-    }
-}
-fs.writeFileSync(path, JSON.stringify(obj, null, 2) + '\n');
-console.log(`Overrode ${n} agent/category models -> ${model} (fallback: ${fallback})`);
-NODE
+    edit_jsonc_config override-omo-models \
+        "$omo_config" \
+        "${OMO_MODEL:-zhipuai-coding-plan/glm-5.2}" \
+        "${OMO_FALLBACK_MODEL:-deepseek/deepseek-v4-pro}"
 fi
 
 print_step 11 "Installing GitHub CLI (gh)"
-# GitHub CLI 的 apt 源（官方 keyring 已是 gpg 二进制，无需 dearmor）
+# GitHub 发布的 keyring 已是 dearmor 后的格式
 sudo install -d -m 0755 "$KEYRING_DIR"
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     | sudo tee "$GH_KEYRING" >/dev/null
@@ -249,70 +523,22 @@ if [ "$omo_needs_bun" = "true" ]; then
 fi
 printf 'Platform:   %s\n' "$OMO_PLATFORM"
 
-# ── superpowers ──────────────────────────────────────────────────
-# obra/superpowers：与 oh-my-openagent 同样按 OMO_PLATFORM 安装到对应平台。
+# superpowers
+# 按 OMO_PLATFORM 安装到对应平台
 
 print_step 13 "Installing superpowers ($OMO_PLATFORM edition)"
+opencode_config=""
 
-if [ "$OMO_PLATFORM" = "opencode" ] || [ "$OMO_PLATFORM" = "both" ]; then
-    # OpenCode：把插件说明符加入 opencode 配置的 plugin 数组（不存在则创建）
-    config_file="$(opencode_config_file)"
-    mkdir -p "$(dirname "$config_file")"
+if omo_installs_opencode; then
+    # OpenCode 插件保存在 JSON/JSONC 的 plugin 数组中
+    opencode_config="$(opencode_config_file)"
+    mkdir -p "$(dirname "$opencode_config")"
 
-    node - "$config_file" "$SUPERPOWERS_OPENCODE_SPEC" <<'NODE'
-const fs = require('fs');
-const path = process.argv[2];
-const spec = process.argv[3];
-
-// 字符串感知的 JSONC 注释剥离，避免误伤 URL 中的 "//"
-function stripJsonc(s) {
-    let out = '';
-    let i = 0;
-    let inStr = false;
-    let strCh = '';
-    while (i < s.length) {
-        const c = s[i];
-        const next = s[i + 1];
-        if (inStr) {
-            out += c;
-            if (c === '\\') { out += (next ?? ''); i += 2; continue; }
-            if (c === strCh) inStr = false;
-            i += 1;
-            continue;
-        }
-        if (c === '"' || c === "'") { inStr = true; strCh = c; out += c; i += 1; continue; }
-        if (c === '/' && next === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
-        if (c === '/' && next === '*') { i += 2; while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue; }
-        out += c;
-        i += 1;
-    }
-    return out;
-}
-
-let raw = '{}';
-try { raw = fs.readFileSync(path, 'utf8'); } catch (e) { /* 文件不存在 */ }
-let obj;
-try {
-    obj = JSON.parse(stripJsonc(raw));
-} catch (e) {
-    console.error(`Failed to parse ${path} as JSON/JSONC: ${e.message}`);
-    process.exit(1);
-}
-if (typeof obj !== 'object' || obj === null) obj = {};
-if (!Array.isArray(obj.plugin)) obj.plugin = [];
-if (!obj.plugin.includes(spec)) {
-    obj.plugin.push(spec);
-    fs.writeFileSync(path, JSON.stringify(obj, null, 2) + '\n');
-    console.log(`Added "${spec}" to ${path}`);
-} else {
-    console.log(`"${spec}" already present in ${path}`);
-}
-NODE
+    edit_jsonc_config ensure-plugin "$opencode_config" "$SUPERPOWERS_OPENCODE_SPEC"
 fi
 
-if [ "$OMO_PLATFORM" = "codex" ] || [ "$OMO_PLATFORM" = "both" ]; then
-    # Codex CLI：从默认 openai-curated 市场安装 superpowers
-    # 状态列为第二列（"installed" 或 "not"）；用 awk 精确判断，避免误匹配 "not installed"
+if omo_installs_codex; then
+    # 第二列是安装状态，需精确匹配以避免误判 not installed
     if codex plugin list 2>/dev/null | awk '$1=="superpowers@openai-curated" && $2=="installed"{found=1} END{exit !found}'; then
         echo "superpowers already installed for Codex CLI; skipping."
     else
@@ -320,90 +546,29 @@ if [ "$OMO_PLATFORM" = "codex" ] || [ "$OMO_PLATFORM" = "both" ]; then
     fi
 fi
 
-# ── MCP 服务器：Context7 / Playwright ─────────────────────────────
-# Context7、Playwright 均无需鉴权。
+# MCP 服务器
+# Context7 与 Playwright 均无需凭据
 
 print_step 14 "Installing MCP servers: Context7 / Playwright ($OMO_PLATFORM edition)"
 
-if [ "$OMO_PLATFORM" = "opencode" ] || [ "$OMO_PLATFORM" = "both" ]; then
-    # OpenCode：写入 opencode.json[c] 的 mcp 段（仅新增缺失项，不覆盖已有配置）
-    config_file="$(opencode_config_file)"
-    mkdir -p "$(dirname "$config_file")"
+if omo_installs_opencode; then
+    if [ -z "$opencode_config" ]; then
+        opencode_config="$(opencode_config_file)"
+        mkdir -p "$(dirname "$opencode_config")"
+    fi
 
-    node - "$config_file" "$MCP_CONTEXT7_URL" "$MCP_PLAYWRIGHT_SPEC" <<'NODE'
-const fs = require('fs');
-const path = process.argv[2];
-const context7Url = process.argv[3];
-const playwrightSpec = process.argv[4];
-
-// 字符串感知的 JSONC 注释剥离，避免误伤 URL 中的 "//"
-function stripJsonc(s) {
-    let out = '';
-    let i = 0;
-    let inStr = false;
-    let strCh = '';
-    while (i < s.length) {
-        const c = s[i];
-        const next = s[i + 1];
-        if (inStr) {
-            out += c;
-            if (c === '\\') { out += (next ?? ''); i += 2; continue; }
-            if (c === strCh) inStr = false;
-            i += 1;
-            continue;
-        }
-        if (c === '"' || c === "'") { inStr = true; strCh = c; out += c; i += 1; continue; }
-        if (c === '/' && next === '/') { while (i < s.length && s[i] !== '\n') i++; continue; }
-        if (c === '/' && next === '*') { i += 2; while (i < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++; i += 2; continue; }
-        out += c;
-        i += 1;
-    }
-    return out;
-}
-
-let raw = '{}';
-try { raw = fs.readFileSync(path, 'utf8'); } catch (e) { /* 文件不存在 */ }
-let obj;
-try {
-    obj = JSON.parse(stripJsonc(raw));
-} catch (e) {
-    console.error(`Failed to parse ${path} as JSON/JSONC: ${e.message}`);
-    process.exit(1);
-}
-if (typeof obj !== 'object' || obj === null) obj = {};
-if (typeof obj.mcp !== 'object' || obj.mcp === null) obj.mcp = {};
-
-// 期望的两项配置
-const desired = {
-    context7: { type: 'remote', url: context7Url, enabled: true },
-    playwright: { type: 'local', command: ['npx', '-y', playwrightSpec], enabled: true },
-};
-
-let changed = false;
-for (const [name, entry] of Object.entries(desired)) {
-    // 仅新增缺失的服务器；已存在则保留用户配置（可能已自定义 URL 或禁用）
-    if (!(name in obj.mcp)) {
-        obj.mcp[name] = entry;
-        changed = true;
-        console.log(`- mcp.${name}`);
-    }
-}
-if (changed) {
-    fs.writeFileSync(path, JSON.stringify(obj, null, 2) + '\n');
-    console.log(`Updated MCP servers in ${path}`);
-} else {
-    console.log(`MCP servers already configured in ${path}`);
-}
-NODE
+    edit_jsonc_config ensure-mcp "$opencode_config" "$MCP_CONTEXT7_URL" "$MCP_PLAYWRIGHT_SPEC"
 fi
 
-if [ "$OMO_PLATFORM" = "codex" ] || [ "$OMO_PLATFORM" = "both" ]; then
-    # Codex CLI：用 codex mcp add 注册；codex mcp get 返回非零表示尚未配置
+if omo_installs_codex; then
+    # 服务器尚未注册时 codex mcp get 会返回非零状态
     codex mcp get context7 >/dev/null 2>&1 \
         || codex mcp add context7 --url "$MCP_CONTEXT7_URL"
     codex mcp get playwright >/dev/null 2>&1 \
         || codex mcp add playwright -- npx -y "$MCP_PLAYWRIGHT_SPEC"
 fi
+
+configure_codex_base
 
 echo
 echo "======================================"

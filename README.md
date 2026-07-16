@@ -100,23 +100,24 @@ Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 
 `RUBY_SERIES`、`RUBY_VERSION` 和 `RBENV_ROOT` 覆盖默认分支、Ruby 版本与安装
 目录。
 
-Node.js/npm 脚本在装好 Node.js 与全局 CLI 工具（含 `opencode-ai` 和
-`@openai/codex`）之后，会继续安装 oh-my-openagent 与 superpowers 两个插件，默认
-同时安装到两个平台（`OMO_PLATFORM=both`）。oh-my-openagent 先通过官方安装器装好
-Bun，再以 `bunx oh-my-openagent install --platform=both` 注册；superpowers 则按平台
+Node.js/npm 脚本会安装 `jq` 作为配置编辑工具；装好 Node.js 与全局 CLI 工具（含
+`opencode-ai`、`@openai/codex` 和 `@ast-grep/cli`）之后，会继续安装
+oh-my-openagent 与 superpowers 两个插件，默认同时安装到两个平台
+（`OMO_PLATFORM=both`）。OpenCode 路径会确保 Bun 可用，再以
+`bun x oh-my-openagent install --platform=both` 注册；superpowers 则按平台
 分别处理：OpenCode 端把 `superpowers@git+https://github.com/obra/superpowers.git`
 写入 `~/.config/opencode/opencode.json[c]` 的 `plugin` 数组，Codex 端执行
 `codex plugin add superpowers@openai-curated`。仅装 OpenCode 用
 `OMO_PLATFORM=opencode`，仅装 Codex CLI 用 `OMO_PLATFORM=codex`（此时 oh-my-openagent
-改用 `npx lazycodex-ai install`，无需 Bun）。oh-my-openagent 默认以非交互模式安装，内置订阅
-默认值为智谱 Z.ai Coding Plan（GLM）：`--no-tui --claude=no --gemini=no --copilot=no
---zai-coding-plan=yes --skip-auth`；`--no-tui` 要求 claude/gemini/copilot 必填。组件名之后的
-参数原样透传，后出现的同名参数生效，例如 `./setup.sh npm --claude=max20` 切换订阅，
-或 `./setup.sh npm --zai-coding-plan=no --opencode-go=yes` 改用 OpenCode Go。
+改用 `npx lazycodex-ai install`，无需 Bun）。oh-my-openagent 默认以非交互模式安装，且不传任何
+订阅 flag（`--no-tui --claude=no --gemini=no --copilot=no --skip-auth`）：因为 oh-my-openagent 写的
+`zai-coding-plan` 前缀在 OpenCode 里不存在（实际是 `zhipuai-coding-plan`），传了反而生成坏配置。
+`--no-tui` 要求 claude/gemini/copilot 必填，故三者显式置 no。组件名之后的参数原样透传，后出现的
+同名参数生效，例如 `./setup.sh npm --opencode-go=yes` 启用 OpenCode Go。
 
-安装器写出的 provider 前缀（`zai-coding-plan`）与实际可用的 `zhipuai-coding-plan` 不一致，且会把多数
-agent 兜底成不可用的 `opencode/gpt-5-nano`；故脚本在安装后把 `oh-my-openagent.json` 里全部 agent 与
-category 统一覆盖成 **GLM-5.2 为主、DeepSeek V4 Pro 为备**：`model=zhipuai-coding-plan/glm-5.2`、
+未启用任何订阅时，安装器会把所有 agent 兜底成不可用的 `opencode/gpt-5-nano`（需 OpenCode Zen，
+本机无）；故脚本在安装后把 `oh-my-openagent.json` 里全部 agent 与 category 统一覆盖成 **GLM-5.2
+为主、DeepSeek V4 Pro 为备**：`model=zhipuai-coding-plan/glm-5.2`、
 `fallback_models=["deepseek/deepseek-v4-pro"]`。可用 `OMO_MODEL` 与 `OMO_FALLBACK_MODEL` 环境变量覆盖
 这两个值。两个 provider 均为 OpenCode 内置：智谱经 `opencode auth login`（Z.AI）鉴权，DeepSeek 经
 `/connect` 或 `DEEPSEEK_API_KEY`。安装后在会话中输入 `ultrawork`（或 `ulw`）开始使用
@@ -128,9 +129,18 @@ oh-my-openagent；重启 OpenCode/Codex 即可加载 superpowers 技能。
 `opencode.json[c]` 的 `mcp` 段（仅新增缺失项，不覆盖已有配置）；Codex 端用 `codex mcp add`
 注册。
 
-此外脚本会通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）和 `@ast-grep/cli`（提供 `sg`
-命令）：前者供 oh-my-openagent/superpowers 的 PR、issue、Actions 等工作流使用，后者供
-ast-grep skill 使用，并通过 `OMO_AST_GREP_SG_PATH` 让 oh-my-openagent 直接复用。
+此外脚本会通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI），供
+oh-my-openagent/superpowers 的 PR、issue、Actions 等工作流使用。`@ast-grep/cli`
+由 npm 全局安装并提供 `sg` 命令；脚本会通过 `OMO_AST_GREP_SG_PATH` 让
+oh-my-openagent 直接复用这个二进制。
+
+脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。建议组合为
+`gpt-5.6-sol`、`high`、`default`、`on-request`、`workspace-write` 和启用网络；模型、推理强度、
+服务等级、审批策略与沙箱模式作为顶层标量写入，网络开关按 Codex 当前格式写入
+`[sandbox_workspace_write].network_access`。脚本会移除旧版误写的顶层 `network_access` 字符串，
+保留其它注释、配置键与表段；各值可用 `CODEX_MODEL` / `CODEX_REASONING` /
+`CODEX_SERVICE_TIER` / `CODEX_APPROVAL` / `CODEX_SANDBOX` / `CODEX_NETWORK` 环境变量覆盖。
+其中 `CODEX_NETWORK` 接受 `enabled` 或 `disabled`，并分别映射为 TOML 布尔值 `true` 或 `false`。
 
 ## 维护约定
 
