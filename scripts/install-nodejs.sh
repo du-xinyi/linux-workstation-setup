@@ -513,10 +513,8 @@ printf 'Platform:   %s\n' "$OMO_PLATFORM"
 print_step 13 "Installing MCP servers: Context7 / Playwright ($OMO_PLATFORM edition)"
 
 if omo_installs_opencode; then
-    if [ -z "$opencode_config" ]; then
-        opencode_config="$(opencode_config_file)"
-        mkdir -p "$(dirname "$opencode_config")"
-    fi
+    opencode_config="$(opencode_config_file)"
+    mkdir -p "$(dirname "$opencode_config")"
 
     edit_jsonc_config ensure-mcp "$opencode_config" "$MCP_CONTEXT7_URL" "$MCP_PLAYWRIGHT_SPEC"
 fi
