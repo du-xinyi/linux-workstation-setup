@@ -24,6 +24,7 @@ Components:
   ruby            Install Ruby using rbenv and ruby-build
   rust            Install Rust using the official rustup installer
   miniconda       Install Miniconda using the official installer
+  extras          Install extra applications (Solaar, etc.)
   list            List available components
   help            Show this help
 
@@ -37,16 +38,17 @@ Examples:
   ./setup.sh ruby
   ./setup.sh rust
   ./setup.sh miniconda
+  ./setup.sh extras
 EOF
 }
 
 list_components() {
-    printf '%s\n' all fonts zsh npm rust ruby miniconda fcitx5-rime
+    printf '%s\n' all fonts zsh npm rust ruby miniconda extras fcitx5-rime
 }
 
 normalize_component() {
     case "$1" in
-        npm|fonts|zsh|ruby|rust|miniconda|fcitx5-rime)
+        npm|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
         rime)
@@ -63,7 +65,7 @@ normalize_component() {
 
 component_requires_apt() {
     case "$1" in
-        fonts|fcitx5-rime|zsh|npm|ruby) return 0 ;;
+        fonts|fcitx5-rime|zsh|npm|ruby|extras) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -153,6 +155,9 @@ run_component() {
         miniconda|conda)
             "$ROOT_DIR/scripts/install-miniconda.sh" "$@"
             ;;
+        extras)
+            "$ROOT_DIR/scripts/install-extras.sh" "$@"
+            ;;
         *)
             printf 'Unknown component: %s\n\n' "$component" >&2
             usage >&2
@@ -203,6 +208,7 @@ readonly ALL_COMPONENTS=(
     rust
     ruby
     miniconda
+    extras
     fcitx5-rime
 )
 SKIP_COMPONENTS=()

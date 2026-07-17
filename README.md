@@ -11,6 +11,7 @@
 │   ├── install-miniconda.sh
 │   ├── install-nodejs.sh
 │   ├── install-ruby.sh
+│   ├── install-extras.sh
 │   ├── install-zsh.sh
 │   ├── install-rust.sh
 │   └── lib/
@@ -58,11 +59,12 @@
 ./setup.sh ruby
 ./setup.sh rust
 ./setup.sh miniconda
+./setup.sh extras
 ```
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
-Fonts、Zsh、Node.js/npm、Rust、Ruby、Miniconda、Fcitx 5 Rime。由于 Zsh
+Fonts、Zsh、Node.js/npm、Rust、Ruby、Miniconda、Extras、Fcitx 5 Rime。由于 Zsh
 脚本会生成 `~/.zshrc`，它会在 Node.js、Rust、Ruby 和 Miniconda 之前运行，
 避免后续写入的 Shell 配置被覆盖。Rust 会在 Ruby 之前安装，Ruby 构建时会优先
 加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次 `apt-get update`，
@@ -94,6 +96,30 @@ Rust 和 Miniconda 组件依赖 `vendor/` 中的上游安装器。安装器不�
 ./vendor/download-installers.sh rust
 ./vendor/download-installers.sh miniconda
 ```
+
+Extras 脚本安装常用拓展程序：
+
+- **bubblewrap** — 非特权容器运行时，为 Flatpak 提供沙箱隔离，并配置内核 user namespaces 及 AppArmor 豁免
+- **Solaar** — Logitech 设备管理器（`ppa:solaar-unifying/stable`），将当前用户加入 `plugdev` 组
+- **Hardinfo2** — 系统硬件信息与基准测试工具（apt）
+- **System Monitor** — GNOME 系统资源监控器（apt）
+- **indicator-sysmonitor** — 顶栏显示 CPU/内存/网络等指标的指示器（`ppa:fossfreedom/indicator-sysmonitor`）
+- **ubuntu-restricted-extras** — 多媒体编解码器、微软字体等受限组件（apt，预接受 EULA）
+- **VLC** — 多媒体播放器（apt）
+- **lm-sensors / nvme-cli / smartmontools** — 硬件温度、NVMe 与磁盘健康监控（apt）
+- **net-tools** — 经典网络工具（apt）
+- **GParted / Baobab / ncdu** — 分区、磁盘用量分析与目录占用分析（apt）
+- **p7zip-full / p7zip-rar / unrar** — 压缩归档支持（apt）
+- **Blueman** — 蓝牙设备管理器（apt）
+- **Flameshot** — 截图工具（apt）
+- **GNOME Tweaks** — GNOME 高级设置工具（apt）
+- **GNOME Shell Extension Manager** — 浏览与管理 GNOME 扩展（apt）
+- **curl** — 命令行 HTTP 客户端（apt）
+- **wget** — 命令行下载工具（apt）
+- **Pinta** — 轻量图像编辑器（Flatpak）
+- **Mission Center / Loupe** — 现代系统资源监控器与图片查看器（Flatpak）
+
+安装后需重新登录使 `plugdev` 组成员身份生效。
 
 Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 维护分支
 中的最新补丁版，并根据当前 Shell 写入 rbenv 初始化配置。可通过
