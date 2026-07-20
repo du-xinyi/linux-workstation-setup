@@ -127,31 +127,14 @@ Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 
 目录。
 
 Node.js/npm 脚本会安装 `jq` 作为配置编辑工具；装好 Node.js 与全局 CLI 工具（含
-`opencode-ai`、`@openai/codex` 和 `@ast-grep/cli`）之后，会继续安装
-oh-my-openagent 插件，默认同时安装到两个平台（`OMO_PLATFORM=both`）。OpenCode 路径会确保
-Bun 可用，再以 `bun x oh-my-openagent install --platform=both` 注册。仅装 OpenCode 用
-`OMO_PLATFORM=opencode`，仅装 Codex CLI 用 `OMO_PLATFORM=codex`（此时 oh-my-openagent
-改用 `npx lazycodex-ai install`，无需 Bun）。oh-my-openagent 默认以非交互模式安装，且不传任何
-订阅 flag（`--no-tui --claude=no --gemini=no --copilot=no --skip-auth`）：因为 oh-my-openagent 写的
-`zai-coding-plan` 前缀在 OpenCode 里不存在（实际是 `zhipuai-coding-plan`），传了反而生成坏配置。
-`--no-tui` 要求 claude/gemini/copilot 必填，故三者显式置 no。组件名之后的参数原样透传，后出现的
-同名参数生效，例如 `./setup.sh npm --opencode-go=yes` 启用 OpenCode Go。
-
-脚本在安装后把 `oh-my-openagent.json` 里全部 agent 与 category 统一覆盖成 **GLM-5.2 为主、
-DeepSeek V4 Pro 为备**：`model=zhipuai-coding-plan/glm-5.2`、
-`fallback_models=["deepseek/deepseek-v4-pro"]`。可用 `OMO_MODEL` 与 `OMO_FALLBACK_MODEL` 环境变量覆盖
-这两个值。两个 provider 均为 OpenCode 内置：智谱经 `opencode auth login`（Z.AI）鉴权，DeepSeek 经
-`/connect` 或 `DEEPSEEK_API_KEY`。安装后在会话中输入 `ultrawork`（或 `ulw`）开始使用 oh-my-openagent。
-
-随后脚本还会注册两个 MCP 服务器（Context7 / Playwright），同样按
-`OMO_PLATFORM` 装到对应平台。Context7 用远程 `https://mcp.context7.com/mcp`，Playwright
-用本地 stdio `npx -y @playwright/mcp@latest`，两者均无需鉴权。OpenCode 端写入
+`opencode-ai`、`@openai/codex` 和 `@ast-grep/cli`）之后，会注册两个 MCP 服务器
+（Context7 / Playwright）。Context7 用远程 `https://mcp.context7.com/mcp`，Playwright 用本地 stdio
+`npx -y @playwright/mcp@latest`，两者均无需鉴权。OpenCode 端写入
 `opencode.json[c]` 的 `mcp` 段（仅新增缺失项，不覆盖已有配置）；Codex 端用 `codex mcp add`
 注册。
 
-此外脚本会通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI），供 oh-my-openagent 的
-PR、issue、Actions 等工作流使用。`@ast-grep/cli` 由 npm 全局安装并提供 `sg` 命令；脚本会
-通过 `OMO_AST_GREP_SG_PATH` 让 oh-my-openagent 直接复用这个二进制。
+此外脚本会通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。`@ast-grep/cli` 由 npm 全局安装并提供
+`sg` 命令。
 
 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。建议组合为
 `gpt-5.6-sol`、`high`、`default`、`on-request`、`workspace-write` 和启用网络；模型、推理强度、

@@ -9,7 +9,7 @@ readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=13
+readonly SETUP_STEP_TOTAL=10
 
 # 默认值均可通过同名环境变量覆盖
 readonly NODE_MAJOR="${NODE_MAJOR:-24}"
@@ -22,10 +22,6 @@ readonly NODESOURCE_KEYRING="${KEYRING_DIR}/nodesource.gpg"
 readonly NODESOURCE_LIST="/etc/apt/sources.list.d/nodesource.list"
 readonly GH_KEYRING="${KEYRING_DIR}/githubcli-archive-keyring.gpg"
 readonly GH_LIST="/etc/apt/sources.list.d/github-cli.list"
-
-# oh-my-openagent 目标平台：both、opencode 或 codex
-readonly OMO_PLATFORM="${OMO_PLATFORM:-both}"
-readonly BUN_DIR="${BUN_DIR:-$HOME/.bun}"
 
 # MCP 服务器
 # 无需鉴权的 MCP 端点
@@ -63,14 +59,6 @@ opencode_config_file() {
         fi
     done
     printf '%s\n' "$dir/opencode.jsonc"
-}
-
-omo_installs_opencode() {
-    [ "$OMO_PLATFORM" = "opencode" ] || [ "$OMO_PLATFORM" = "both" ]
-}
-
-omo_installs_codex() {
-    [ "$OMO_PLATFORM" = "codex" ] || [ "$OMO_PLATFORM" = "both" ]
 }
 
 strip_jsonc_comments() {
@@ -155,39 +143,6 @@ edit_jsonc_config() {
     fi
 
     case "$mode" in
-        override-omo-models)
-            local model="$1"
-            local fallback="$2"
-            local count
-            count="$(jq '[
-                (if (.agents | type) == "object" then .agents[] else empty end),
-                (if (.categories | type) == "object" then .categories[] else empty end)
-            ] | map(select(type == "object")) | length' "$tmp")"
-            jq --arg model "$model" --arg fallback "$fallback" '
-                (if (.agents | type) == "object" then
-                    .agents |= with_entries(
-                        if (.value | type) == "object" then
-                            .value.model = $model
-                            | .value.fallback_models = [$fallback]
-                        else
-                            .
-                        end
-                    )
-                else . end)
-                | (if (.categories | type) == "object" then
-                    .categories |= with_entries(
-                        if (.value | type) == "object" then
-                            .value.model = $model
-                            | .value.fallback_models = [$fallback]
-                        else
-                            .
-                        end
-                    )
-                else . end)
-            ' "$tmp" >"$next"
-            mv "$next" "$path"
-            echo "Overrode $count agent/category models -> $model (fallback: $fallback)"
-            ;;
         ensure-mcp)
             local context7_url="$1"
             local playwright_spec="$2"
@@ -427,69 +382,7 @@ printf 'Codex:      '; codex --version || true
 printf 'OpenCode:   '; opencode --version || true
 printf 'ast-grep:   '; sg --version || true
 
-# oh-my-openagent
-# 在 Node/npm 之后安装，确保 OpenCode 与 Codex 已在 PATH 中
-# 组件名之后的参数会原样透传给上游安装器
-
-omo_needs_bun=false
-case "$OMO_PLATFORM" in
-    opencode|both) omo_needs_bun=true ;;
-    codex)         ;;
-    *)
-        echo "Invalid OMO_PLATFORM: $OMO_PLATFORM (expected opencode, codex, or both)" >&2
-        exit 1
-        ;;
-esac
-
-bun_bin=""
-if [ "$omo_needs_bun" = "true" ]; then
-    print_step 9 "Ensuring Bun is available for oh-my-openagent"
-    if command -v bun >/dev/null 2>&1; then
-        bun_bin="$(command -v bun)"
-    elif [ -x "$BUN_DIR/bin/bun" ]; then
-        bun_bin="$BUN_DIR/bin/bun"
-    else
-        echo "Bun not found; installing via the official installer."
-        curl -fsSL https://bun.sh/install | bash
-        bun_bin="$BUN_DIR/bin/bun"
-    fi
-    # 确保子进程能找到 bun，避免部分 OMO provisioning 回退到 node 路径
-    case ":${PATH:-}:" in
-        *":$BUN_DIR/bin:"*) ;;
-        *) export PATH="$BUN_DIR/bin:${PATH:-}" ;;
-    esac
-    printf 'Bun:        %s\n' "$("$bun_bin" --version)"
-fi
-
-print_step 10 "Installing oh-my-openagent ($OMO_PLATFORM edition)"
-# 复用已验证可用的 ast-grep 二进制，避开 OMO provisioning 路径问题
-if [ -x "$NPM_DIR/bin/sg" ]; then
-    export OMO_AST_GREP_SG_PATH="$NPM_DIR/bin/sg"
-fi
-# 这里不传订阅参数，后面统一修正生成的 OpenCode 模型前缀
-case "$OMO_PLATFORM" in
-    opencode|both)
-        "$bun_bin" x oh-my-openagent install --platform="$OMO_PLATFORM" \
-            --no-tui \
-            --claude=no --gemini=no --copilot=no \
-            --skip-auth \
-            "$@"
-        ;;
-    codex)
-        npx --yes lazycodex-ai install "$@"
-        ;;
-esac
-
-omo_config="$HOME/.config/opencode/oh-my-openagent.json"
-[ -f "$omo_config" ] || omo_config="$HOME/.config/opencode/oh-my-openagent.jsonc"
-if [ -f "$omo_config" ]; then
-    edit_jsonc_config override-omo-models \
-        "$omo_config" \
-        "${OMO_MODEL:-zhipuai-coding-plan/glm-5.2}" \
-        "${OMO_FALLBACK_MODEL:-deepseek/deepseek-v4-pro}"
-fi
-
-print_step 11 "Installing GitHub CLI (gh)"
+print_step 9 "Installing GitHub CLI (gh)"
 # GitHub 发布的 keyring 已是 dearmor 后的格式
 sudo install -d -m 0755 "$KEYRING_DIR"
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -501,31 +394,21 @@ sudo apt-get update
 sudo apt-get install -y gh
 printf 'gh:         %s\n' "$(gh --version | head -1)"
 
-print_step 12 "Checking oh-my-openagent"
-if [ "$omo_needs_bun" = "true" ]; then
-    "$bun_bin" x oh-my-openagent doctor || true
-fi
-printf 'Platform:   %s\n' "$OMO_PLATFORM"
-
 # MCP 服务器
 # Context7 与 Playwright 均无需凭据
 
-print_step 13 "Installing MCP servers: Context7 / Playwright ($OMO_PLATFORM edition)"
+print_step 10 "Installing MCP servers: Context7 / Playwright"
 
-if omo_installs_opencode; then
-    opencode_config="$(opencode_config_file)"
-    mkdir -p "$(dirname "$opencode_config")"
+opencode_config="$(opencode_config_file)"
+mkdir -p "$(dirname "$opencode_config")"
 
-    edit_jsonc_config ensure-mcp "$opencode_config" "$MCP_CONTEXT7_URL" "$MCP_PLAYWRIGHT_SPEC"
-fi
+edit_jsonc_config ensure-mcp "$opencode_config" "$MCP_CONTEXT7_URL" "$MCP_PLAYWRIGHT_SPEC"
 
-if omo_installs_codex; then
-    # 服务器尚未注册时 codex mcp get 会返回非零状态
-    codex mcp get context7 >/dev/null 2>&1 \
-        || codex mcp add context7 --url "$MCP_CONTEXT7_URL"
-    codex mcp get playwright >/dev/null 2>&1 \
-        || codex mcp add playwright -- npx -y "$MCP_PLAYWRIGHT_SPEC"
-fi
+# 服务器尚未注册时 codex mcp get 会返回非零状态
+codex mcp get context7 >/dev/null 2>&1 \
+    || codex mcp add context7 --url "$MCP_CONTEXT7_URL"
+codex mcp get playwright >/dev/null 2>&1 \
+    || codex mcp add playwright -- npx -y "$MCP_PLAYWRIGHT_SPEC"
 
 configure_codex_base
 
