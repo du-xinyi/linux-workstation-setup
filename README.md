@@ -77,7 +77,10 @@ LaTeX 和数学排版的 Latin Modern 与 STIX。可以使用以空格分隔的
 `FONT_PACKAGES` 环境变量覆盖默认包列表。
 
 Zsh 脚本安装 Oh My Zsh 和语法高亮插件，并生成基础 Shell 与历史记录配置。
-执行时会直接覆盖现有的 `~/.zshrc`。
+执行时会直接覆盖现有的 `~/.zshrc`。插件列表中还包含
+`conda-zsh-completion`（来自 `conda-incubator/conda-zsh-completion`），为
+`conda` 提供 Tab 补全（子命令、环境名、包名）。该插件在 `conda init` 注册的
+`conda` 函数上同样生效；conda 未安装时仅在按 Tab 时返回空，不影响 Shell 启动。
 
 Miniconda 封装脚本会在安装成功后设置 `auto_activate: false`，避免启动
 Shell 时自动进入 base 环境，并根据当前 Shell 运行对应的 `conda init`。不传

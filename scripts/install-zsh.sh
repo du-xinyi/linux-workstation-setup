@@ -45,6 +45,7 @@ fi
 print_step 3 "Installing Zsh plugins"
 declare -A plugins=(
     [zsh-syntax-highlighting]="https://github.com/zsh-users/zsh-syntax-highlighting.git"
+    [conda-zsh-completion]="https://github.com/conda-incubator/conda-zsh-completion.git"
 )
 for plugin in "${!plugins[@]}"; do
     plugin_dir="$ZSH_CUSTOM_DIR/plugins/$plugin"
@@ -74,6 +75,7 @@ plugins=(
   extract
   pip
   zsh-syntax-highlighting
+  conda-zsh-completion
 )
 
 source "$ZSH/oh-my-zsh.sh"
