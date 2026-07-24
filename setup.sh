@@ -24,6 +24,7 @@ Components:
   zsh             Install and configure Zsh, Oh My Zsh, and plugins
   ruby            Install Ruby using rbenv and ruby-build
   rust            Install Rust using the official rustup installer
+  cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal
   miniconda       Install Miniconda using the official installer
   extras          Install extra applications (Solaar, etc.)
   list            List available components
@@ -38,6 +39,7 @@ Examples:
   ./setup.sh zsh
   ./setup.sh ruby
   ./setup.sh rust
+  ./setup.sh cpp
   ./setup.sh miniconda
   ./setup.sh extras
   MIRROR_PROVIDER=aliyun ./setup.sh mirrors
@@ -45,13 +47,16 @@ EOF
 }
 
 list_components() {
-    printf '%s\n' all mirrors fonts zsh npm rust ruby miniconda extras fcitx5-rime
+    printf '%s\n' all mirrors fonts zsh npm rust ruby cpp miniconda extras fcitx5-rime
 }
 
 normalize_component() {
     case "$1" in
         mirrors|apt-mirror|mirror)
             printf '%s\n' mirrors
+            ;;
+        cpp|cxx|c++)
+            printf '%s\n' cpp
             ;;
         npm|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
             printf '%s\n' "$1"
@@ -70,7 +75,7 @@ normalize_component() {
 
 component_requires_apt() {
     case "$1" in
-        fonts|fcitx5-rime|zsh|npm|ruby|extras) return 0 ;;
+        fonts|fcitx5-rime|zsh|npm|ruby|cpp|extras) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -165,6 +170,9 @@ run_component() {
         rust)
             "$ROOT_DIR/scripts/install-rust.sh" "$@"
             ;;
+        cpp)
+            "$ROOT_DIR/scripts/install-cpp.sh" "$@"
+            ;;
         miniconda|conda)
             "$ROOT_DIR/scripts/install-miniconda.sh" "$@"
             ;;
@@ -221,6 +229,7 @@ readonly ALL_COMPONENTS=(
     npm
     rust
     ruby
+    cpp
     miniconda
     extras
     fcitx5-rime

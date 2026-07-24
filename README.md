@@ -12,6 +12,7 @@
 │   ├── install-mirrors.sh
 │   ├── install-nodejs.sh
 │   ├── install-ruby.sh
+│   ├── install-cpp.sh
 │   ├── install-extras.sh
 │   ├── install-zsh.sh
 │   ├── install-rust.sh
@@ -60,15 +61,16 @@
 ./setup.sh zsh
 ./setup.sh ruby
 ./setup.sh rust
+./setup.sh cpp
 ./setup.sh miniconda
 ./setup.sh extras
 ```
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
-Mirrors、Fonts、Zsh、Node.js/npm、Rust、Ruby、Miniconda、Extras、Fcitx 5 Rime。Mirrors
+Mirrors、Fonts、Zsh、Node.js/npm、Rust、Ruby、C/C++、Miniconda、Extras、Fcitx 5 Rime。Mirrors
 排在最前，使后续组件的包下载直接走国内镜像；由于 Zsh 脚本会生成 `~/.zshrc`，它会在
-Node.js、Rust、Ruby 和 Miniconda 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
+Node.js、Rust、Ruby、C/C++ 和 Miniconda 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
 Ruby 之前安装，Ruby 构建时会优先加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次
 `apt-get update`，然后让各组件跳过自己的重复包索引更新；当 Mirrors 未被 `--skip` 跳过时，
 这次预更新会交给 Mirrors 组件（它先换源再刷新索引，避免用官方源做无谓的首次更新）；
@@ -153,6 +155,29 @@ Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 
 中的最新补丁版，并根据当前 Shell 写入 rbenv 初始化配置。可通过
 `RUBY_SERIES`、`RUBY_VERSION` 和 `RBENV_ROOT` 覆盖默认分支、Ruby 版本与安装
 目录。
+
+C/C++ 脚本安装一套完整的构建环境，覆盖 Linux 用户态（amd64/arm64/armhf/riscv64）与裸机/嵌入式（RISC-V、ARM Cortex-M）两类目标：
+
+- **本机工具链**：`build-essential`（gcc/g++/make）、`cmake`、`ninja-build`、
+  `pkg-config`、`ccache`、`binutils`。
+- **clang 工具链**：`clang`、`clang-format`、`clang-tidy`、`clangd`、`lld`。
+- **调试与静态分析**：`gdb-multiarch`（替代普通 gdb，可调试任意架构）、`valgrind`、`cppcheck`。
+- **Linux 交叉工具链**：为目标架构列表中与主机不同的每个架构安装 `binutils-<triplet>`、
+  `gcc-<triplet>`、`g++-<triplet>`（如 `aarch64-linux-gnu-g++`、`riscv64-linux-gnu-g++`、
+  `arm-linux-gnueabihf-g++`），并随依赖拉入对应架构的 `libc6-dev-<arch>-cross` 与
+  `libstdc++-dev`（即完整 sysroot）；主机架构使用本机 gcc/g++，不重复安装交叉包。
+- **裸机/嵌入式工具链**：`gcc-riscv64-unknown-elf`（+ `binutils`、`picolibc`，且自带
+  `riscv64-unknown-elf-g++`）、`gcc-arm-none-eabi`（+ `binutils`、`libnewlib`、
+  `libstdc++-arm-none-eabi-newlib`）。设 `CPP_BAREMETAL=0` 可跳过。
+- **验证**：安装末尾会对每个 Linux 目标架构编译一段 C++ 并用 `file` 确认产物架构，再对裸机
+  编译器用 `-c` 编译目标文件做冒烟测试（裸机完整链接需启动代码与链接脚本，故仅编译不链接）。
+
+默认 Linux 目标架构为 `amd64 arm64 armhf riscv64`，可通过 `CPP_TARGETS` 环境变量覆盖（空格分隔的
+dpkg 架构名，支持 `amd64`/`arm64`/`armhf`/`riscv64`）。例如仅装 arm64 交叉：
+
+```bash
+CPP_TARGETS="amd64 arm64" ./setup.sh cpp
+```
 
 Node.js/npm 脚本会安装 `jq` 作为配置编辑工具；装好 Node.js 与全局 CLI 工具（含
 `opencode-ai`、`@openai/codex` 和 `@ast-grep/cli`）之后，会注册两个 MCP 服务器
