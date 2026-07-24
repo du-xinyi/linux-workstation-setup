@@ -17,6 +17,7 @@ Usage:
 
 Components:
   all             Install all components in the recommended order
+  mirrors         Switch apt/pip/conda sources to a domestic mirror
   npm             Install Node.js, npm, and common frontend/AI CLI tools
   fcitx5-rime     Install Fcitx 5, Rime, and Rime Ice
   fonts           Install common Latin, programming, CJK, and Emoji fonts
@@ -39,15 +40,19 @@ Examples:
   ./setup.sh rust
   ./setup.sh miniconda
   ./setup.sh extras
+  MIRROR_PROVIDER=aliyun ./setup.sh mirrors
 EOF
 }
 
 list_components() {
-    printf '%s\n' all fonts zsh npm rust ruby miniconda extras fcitx5-rime
+    printf '%s\n' all mirrors fonts zsh npm rust ruby miniconda extras fcitx5-rime
 }
 
 normalize_component() {
     case "$1" in
+        mirrors|apt-mirror|mirror)
+            printf '%s\n' mirrors
+            ;;
         npm|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
@@ -118,6 +123,11 @@ update_package_indexes_once() {
             continue
         fi
 
+        # mirrors 组件会先换源再刷新索引,避免此处用官方源做无谓的预更新
+        if [ "$component" = "mirrors" ]; then
+            return
+        fi
+
         if component_requires_apt "$component"; then
             printf '\n========== Updating package indexes ==========\n'
             require_non_root
@@ -134,6 +144,9 @@ run_component() {
     shift
 
     case "$component" in
+        mirrors)
+            "$ROOT_DIR/scripts/install-mirrors.sh" "$@"
+            ;;
         npm)
             "$ROOT_DIR/scripts/install-nodejs.sh" "$@"
             ;;
@@ -202,6 +215,7 @@ run_all() {
 }
 
 readonly ALL_COMPONENTS=(
+    mirrors
     fonts
     zsh
     npm

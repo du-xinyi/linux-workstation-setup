@@ -9,6 +9,7 @@
 │   ├── install-fcitx5-rime.sh
 │   ├── install-fonts.sh
 │   ├── install-miniconda.sh
+│   ├── install-mirrors.sh
 │   ├── install-nodejs.sh
 │   ├── install-ruby.sh
 │   ├── install-extras.sh
@@ -52,6 +53,7 @@
 安装组件：
 
 ```bash
+./setup.sh mirrors
 ./setup.sh npm
 ./setup.sh fcitx5-rime
 ./setup.sh fonts
@@ -64,12 +66,35 @@
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
-Fonts、Zsh、Node.js/npm、Rust、Ruby、Miniconda、Extras、Fcitx 5 Rime。由于 Zsh
-脚本会生成 `~/.zshrc`，它会在 Node.js、Rust、Ruby 和 Miniconda 之前运行，
-避免后续写入的 Shell 配置被覆盖。Rust 会在 Ruby 之前安装，Ruby 构建时会优先
-加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次 `apt-get update`，
-然后让各组件跳过自己的重复包索引更新；Node.js 添加 NodeSource 仓库后仍会再次
-刷新包索引。
+Mirrors、Fonts、Zsh、Node.js/npm、Rust、Ruby、Miniconda、Extras、Fcitx 5 Rime。Mirrors
+排在最前，使后续组件的包下载直接走国内镜像；由于 Zsh 脚本会生成 `~/.zshrc`，它会在
+Node.js、Rust、Ruby 和 Miniconda 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
+Ruby 之前安装，Ruby 构建时会优先加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次
+`apt-get update`，然后让各组件跳过自己的重复包索引更新；当 Mirrors 未被 `--skip` 跳过时，
+这次预更新会交给 Mirrors 组件（它先换源再刷新索引，避免用官方源做无谓的首次更新）；
+Node.js 添加 NodeSource 仓库后仍会再次刷新包索引。
+
+Mirrors 脚本将 apt、pip 与 conda 的软件源切换到国内镜像，默认使用清华 TUNA，可通过
+`MIRROR_PROVIDER` 环境变量在 `tuna`、`aliyun`、`ustc` 之间切换；也可用更具体的同名环境
+变量覆盖单项地址：`APT_MIRROR_HOST`、`PIP_INDEX_URL`、`PIP_TRUSTED_HOST`、
+`CONDA_CHANNEL_MAIN`、`CONDA_CHANNEL_R`、`CONDA_CLOUD_BASE`。
+
+- **apt**：扫描 `/etc/apt/sources.list` 与 `/etc/apt/sources.list.d/` 下的 `*.list`、
+  `*.sources`（含 Ubuntu 24.04 / Debian 12 的 deb822 格式），将 `archive.ubuntu.com`、
+  `security.ubuntu.com`、`deb.debian.org`、`security.debian.org` 替换为镜像域名并升级为
+  HTTPS，路径保持不变。仅当文件仍引用官方域名时，首次备份为同名 `.orig` 文件，确保
+  `.orig` 始终是官方源；换源后执行一次 `apt-get update`。脚本可重复运行且幂等。
+- **pip**：写入 `~/.config/pip/pip.conf`（XDG 标准位置），并同步到 `~/.pip/pip.conf`
+  以兼容旧版 pip；首次覆盖前各备份一次为 `.bak`。
+- **conda**：写入 `~/.condarc`，镜像化 `defaults` 的 `main`/`r` 渠道，并把 `conda-forge`、
+  `pytorch` 指向镜像；若 conda 已安装，会清空索引缓存。conda 尚未安装时配置同样写入，
+  待 Miniconda 安装后即生效。
+
+恢复官方 apt 源：
+
+```bash
+sudo cp /etc/apt/sources.list.orig /etc/apt/sources.list
+```
 
 字体脚本默认安装 DejaVu、Liberation、Fira Code、JetBrains Mono、Cascadia
 Code、Noto（含扩展、等宽、CJK 和彩色 Emoji）、Carlito、Caladea，以及用于
