@@ -8,7 +8,7 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=7
+readonly SETUP_STEP_TOTAL=8
 
 # 配置 ----------------------------------------------------------------
 
@@ -16,6 +16,8 @@ readonly SETUP_STEP_TOTAL=7
 readonly CPP_TARGETS_RAW="${CPP_TARGETS:-amd64 arm64 armhf riscv64}"
 # 是否安装裸机/嵌入式工具链(1 装,0 跳过)
 readonly CPP_BAREMETAL="${CPP_BAREMETAL:-1}"
+# 是否安装本机常用开发库(1 装,0 跳过)
+readonly CPP_COMMON_LIBS="${CPP_COMMON_LIBS:-1}"
 
 # 工具链包列表 -------------------------------------------------------
 
@@ -41,6 +43,22 @@ readonly -a DEBUG_PKGS=(
     gdb-multiarch
     valgrind
     cppcheck
+)
+
+# 本机常用开发库(仅服务本机开发;交叉开发建议用 vcpkg/conan)
+readonly -a COMMON_LIBS_PKGS=(
+    zlib1g-dev
+    libssl-dev
+    libcurl4-openssl-dev
+    nlohmann-json3-dev
+    libfmt-dev
+    libspdlog-dev
+    libsqlite3-dev
+    libeigen3-dev
+    libgtest-dev
+    libgmock-dev
+    catch2
+    libxml2-dev
 )
 
 # 裸机/嵌入式:RISC-V 用 picolibc,ARM Cortex-M 用 newlib + libstdc++-newlib
@@ -116,21 +134,28 @@ sudo apt-get install -y "${CLANG_PKGS[@]}"
 print_step 4 "Installing debug and static analysis tools"
 sudo apt-get install -y "${DEBUG_PKGS[@]}"
 
-print_step 5 "Installing cross toolchains (${targets[*]})"
+print_step 5 "Installing common development libraries"
+if [ "$CPP_COMMON_LIBS" = "1" ]; then
+    sudo apt-get install -y "${COMMON_LIBS_PKGS[@]}"
+else
+    echo "  CPP_COMMON_LIBS=0; skipping common libraries."
+fi
+
+print_step 6 "Installing cross toolchains (${targets[*]})"
 if [ "${#cross_pkgs[@]}" -eq 0 ]; then
     echo "  host is the only target; no cross toolchain needed."
 else
     sudo apt-get install -y "${cross_pkgs[@]}"
 fi
 
-print_step 6 "Installing bare-metal toolchains (RISC-V, ARM Cortex-M)"
+print_step 7 "Installing bare-metal toolchains (RISC-V, ARM Cortex-M)"
 if [ "$CPP_BAREMETAL" = "1" ]; then
     sudo apt-get install -y "${BAREMETAL_PKGS[@]}"
 else
     echo "  CPP_BAREMETAL=0; skipping bare-metal toolchains."
 fi
 
-print_step 7 "Verifying the toolchain"
+print_step 8 "Verifying the toolchain"
 check_tool "gcc"    gcc
 check_tool "g++"    g++
 check_tool "clang"  clang

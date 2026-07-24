@@ -24,7 +24,7 @@ Components:
   zsh             Install and configure Zsh, Oh My Zsh, and plugins
   ruby            Install Ruby using rbenv and ruby-build
   rust            Install Rust using the official rustup installer
-  cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal
+  cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal + common libs
   miniconda       Install Miniconda using the official installer
   extras          Install extra applications (Solaar, etc.)
   list            List available components

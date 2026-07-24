@@ -162,6 +162,9 @@ C/C++ 脚本安装一套完整的构建环境，覆盖 Linux 用户态（amd64/a
   `pkg-config`、`ccache`、`binutils`。
 - **clang 工具链**：`clang`、`clang-format`、`clang-tidy`、`clangd`、`lld`。
 - **调试与静态分析**：`gdb-multiarch`（替代普通 gdb，可调试任意架构）、`valgrind`、`cppcheck`。
+- **本机常用开发库**：`zlib1g-dev`、`libssl-dev`、`libcurl4-openssl-dev`、`nlohmann-json3-dev`、
+  `libfmt-dev`、`libspdlog-dev`、`libsqlite3-dev`、`libeigen3-dev`、`libgtest-dev`/`libgmock-dev`、
+  `catch2`、`libxml2-dev`。仅服务本机开发；交叉开发建议用 vcpkg/conan。设 `CPP_COMMON_LIBS=0` 可跳过。
 - **Linux 交叉工具链**：为目标架构列表中与主机不同的每个架构安装 `binutils-<triplet>`、
   `gcc-<triplet>`、`g++-<triplet>`（如 `aarch64-linux-gnu-g++`、`riscv64-linux-gnu-g++`、
   `arm-linux-gnueabihf-g++`），并随依赖拉入对应架构的 `libc6-dev-<arch>-cross` 与
