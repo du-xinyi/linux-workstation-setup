@@ -31,9 +31,9 @@ resolve_mirror_defaults() {
             _default_apt_host="mirrors.tuna.tsinghua.edu.cn"
             _default_pip_index="https://pypi.tuna.tsinghua.edu.cn/simple"
             _default_pip_host="pypi.tuna.tsinghua.edu.cn"
-            _default_conda_main="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main"
-            _default_conda_r="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r"
-            _default_conda_cloud="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"
+            _default_conda_main="https://mirrors.nju.edu.cn/anaconda/pkgs/main"
+            _default_conda_r="https://mirrors.nju.edu.cn/anaconda/pkgs/r"
+            _default_conda_cloud="https://chinanet.mirrors.ustc.edu.cn/anaconda/cloud/"
             ;;
         aliyun)
             _default_apt_host="mirrors.aliyun.com"
