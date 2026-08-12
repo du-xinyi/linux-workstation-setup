@@ -141,34 +141,14 @@ configure_apt() {
 configure_pip() {
     local pip_conf_dir="$HOME/.config/pip"
     local pip_conf="$pip_conf_dir/pip.conf"
-    local legacy_pip_conf_dir="$HOME/.pip"
-    local legacy_pip_conf="$legacy_pip_conf_dir/pip.conf"
 
     mkdir -p "$pip_conf_dir"
-    # 首次覆盖前备份一次用户已有配置
-    if [ -f "$pip_conf" ] && [ ! -f "${pip_conf}.bak" ]; then
-        cp -a "$pip_conf" "${pip_conf}.bak"
-        printf '  backed up  %s -> %s.bak\n' "$pip_conf" "$pip_conf"
-    fi
     {
         printf '[global]\n'
         printf 'index-url = %s\n' "$PIP_INDEX_URL"
         printf 'trusted-host = %s\n' "$PIP_TRUSTED_HOST"
     } > "$pip_conf"
     printf '  wrote      %s\n' "$pip_conf"
-
-    # 同步写入旧版路径,兼容旧 pip 与部分工具
-    mkdir -p "$legacy_pip_conf_dir"
-    if [ -f "$legacy_pip_conf" ] && [ ! -f "${legacy_pip_conf}.bak" ]; then
-        cp -a "$legacy_pip_conf" "${legacy_pip_conf}.bak"
-        printf '  backed up  %s -> %s.bak\n' "$legacy_pip_conf" "$legacy_pip_conf"
-    fi
-    {
-        printf '[global]\n'
-        printf 'index-url = %s\n' "$PIP_INDEX_URL"
-        printf 'trusted-host = %s\n' "$PIP_TRUSTED_HOST"
-    } > "$legacy_pip_conf"
-    printf '  wrote      %s\n' "$legacy_pip_conf"
 
     if command -v pip >/dev/null 2>&1; then
         printf '  pip index  %s\n' "$(pip config get global.index-url 2>/dev/null || echo "$PIP_INDEX_URL")"
@@ -178,8 +158,8 @@ configure_pip() {
 configure_conda() {
     local condarc="$HOME/.condarc"
 
-    # 同时配置默认渠道镜像与常用社区渠道(conda-forge / pytorch)
     cat > "$condarc" <<EOF
+auto_activate_base: false
 channels:
   - defaults
 show_channel_urls: true
