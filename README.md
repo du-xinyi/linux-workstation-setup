@@ -11,6 +11,7 @@
 │   ├── install-miniconda.sh
 │   ├── install-mirrors.sh
 │   ├── install-nodejs.sh
+│   ├── install-ai-tools.sh
 │   ├── install-ruby.sh
 │   ├── install-cpp.sh
 │   ├── install-extras.sh
@@ -182,17 +183,18 @@ dpkg 架构名，支持 `amd64`/`arm64`/`armhf`/`riscv64`）。例如仅装 arm6
 CPP_TARGETS="amd64 arm64" ./setup.sh cpp
 ```
 
-Node.js/npm 脚本会安装 `jq` 作为配置编辑工具；装好 Node.js 与全局 CLI 工具（含
-`opencode-ai`、`@openai/codex` 和 `@ast-grep/cli`）之后，会注册两个 MCP 服务器
+Node.js/npm 脚本会通过 NodeSource 源安装 Node.js 与 npm，并全局安装前端工具链
+（pnpm、yarn、typescript、eslint、prettier），同时通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。
+
+AI CLI 工具由独立的 `ai-tools` 组件安装（依赖 `npm` 组件先装好）：`@openai/codex` 与
+`@ast-grep/cli` 由 npm 全局安装（`@ast-grep/cli` 提供 `sg` 命令），OpenCode 改由官方安装脚本
+`curl -fsSL https://opencode.ai/install | bash` 安装到 `~/.opencode/bin`，并注册两个 MCP 服务器
 （Context7 / Playwright）。Context7 用远程 `https://mcp.context7.com/mcp`，Playwright 用本地 stdio
 `npx -y @playwright/mcp@latest`，两者均无需鉴权。OpenCode 端写入
 `opencode.json[c]` 的 `mcp` 段（仅新增缺失项，不覆盖已有配置）；Codex 端用 `codex mcp add`
 注册。
 
-此外脚本会通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。`@ast-grep/cli` 由 npm 全局安装并提供
-`sg` 命令。
-
-脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。建议组合为
+ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。建议组合为
 `gpt-5.6-sol`、`high`、`default`、`on-request`、`workspace-write` 和启用网络；模型、推理强度、
 服务等级、审批策略与沙箱模式作为顶层标量写入，网络开关按 Codex 当前格式写入
 `[sandbox_workspace_write].network_access`。脚本会移除旧版误写的顶层 `network_access` 字符串，

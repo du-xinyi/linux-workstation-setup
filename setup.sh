@@ -18,7 +18,8 @@ Usage:
 Components:
   all             Install all components in the recommended order
   mirrors         Switch apt/pip/conda sources to a domestic mirror
-  npm             Install Node.js, npm, and common frontend/AI CLI tools
+  npm             Install Node.js, npm, and common frontend CLI tools
+  ai-tools        Install AI CLI tools (Codex, OpenCode, ast-grep) and MCP servers
   fcitx5-rime     Install Fcitx 5, Rime, and Rime Ice
   fonts           Install common Latin, programming, CJK, and Emoji fonts
   zsh             Install and configure Zsh, Oh My Zsh, and plugins
@@ -36,6 +37,7 @@ Examples:
   ./setup.sh all --continue-on-error
   ./setup.sh all --skip rust,miniconda
   ./setup.sh npm
+  ./setup.sh ai-tools
   ./setup.sh zsh
   ./setup.sh ruby
   ./setup.sh rust
@@ -47,7 +49,7 @@ EOF
 }
 
 list_components() {
-    printf '%s\n' all mirrors fonts zsh npm rust ruby cpp miniconda extras fcitx5-rime
+    printf '%s\n' all mirrors fonts zsh npm ai-tools rust ruby cpp miniconda extras fcitx5-rime
 }
 
 normalize_component() {
@@ -58,7 +60,7 @@ normalize_component() {
         cpp|cxx|c++)
             printf '%s\n' cpp
             ;;
-        npm|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
+        npm|ai-tools|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
         rime)
@@ -75,7 +77,7 @@ normalize_component() {
 
 component_requires_apt() {
     case "$1" in
-        fonts|fcitx5-rime|zsh|npm|ruby|cpp|extras) return 0 ;;
+        fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|extras) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -155,6 +157,9 @@ run_component() {
         npm)
             "$ROOT_DIR/scripts/install-nodejs.sh" "$@"
             ;;
+        ai-tools)
+            "$ROOT_DIR/scripts/install-ai-tools.sh" "$@"
+            ;;
         fcitx5-rime|rime)
             "$ROOT_DIR/scripts/install-fcitx5-rime.sh" "$@"
             ;;
@@ -227,6 +232,7 @@ readonly ALL_COMPONENTS=(
     fonts
     zsh
     npm
+    ai-tools
     rust
     ruby
     cpp
