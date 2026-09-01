@@ -37,6 +37,13 @@ readonly CODEX_SANDBOX="${CODEX_SANDBOX:-workspace-write}"
 # workspace-write 沙箱的网络访问开关
 readonly CODEX_NETWORK="${CODEX_NETWORK:-enabled}"
 
+# 子代理全局配置
+readonly CODEX_AGENTS_ENABLED="${CODEX_AGENTS_ENABLED:-enabled}"
+readonly CODEX_AGENTS_MAX_THREADS="${CODEX_AGENTS_MAX_THREADS:-6}"
+readonly CODEX_SUBAGENT_MODEL="${CODEX_SUBAGENT_MODEL:-gpt-5.6-terra}"
+readonly CODEX_SUBAGENT_REASONING="${CODEX_SUBAGENT_REASONING:-medium}"
+readonly CODEX_AGENTS_INTERRUPT_MESSAGE="${CODEX_AGENTS_INTERRUPT_MESSAGE:-enabled}"
+
 configure_opencode_mcp() {
     local config_json
 
@@ -139,12 +146,102 @@ update_codex_top_level_config() {
     ' "$path" >"$out"
 }
 
+update_codex_agents_config() {
+    local path="$1"
+    local out="$2"
+    local enabled_value="$3"
+    local interrupt_value="$4"
+
+    CODEX_CFG_AGENTS_ENABLED="$enabled_value" \
+    CODEX_CFG_AGENTS_MAX_THREADS="$CODEX_AGENTS_MAX_THREADS" \
+    CODEX_CFG_SUBAGENT_MODEL="$CODEX_SUBAGENT_MODEL" \
+    CODEX_CFG_SUBAGENT_REASONING="$CODEX_SUBAGENT_REASONING" \
+    CODEX_CFG_AGENTS_INTERRUPT_MESSAGE="$interrupt_value" \
+    awk '
+        BEGIN {
+            keys[1] = "enabled"
+            keys[2] = "max_concurrent_threads_per_session"
+            keys[3] = "default_subagent_model"
+            keys[4] = "default_subagent_reasoning_effort"
+            keys[5] = "interrupt_message"
+            values[1] = ENVIRON["CODEX_CFG_AGENTS_ENABLED"]
+            values[2] = ENVIRON["CODEX_CFG_AGENTS_MAX_THREADS"]
+            values[3] = "\"" ENVIRON["CODEX_CFG_SUBAGENT_MODEL"] "\""
+            values[4] = "\"" ENVIRON["CODEX_CFG_SUBAGENT_REASONING"] "\""
+            values[5] = ENVIRON["CODEX_CFG_AGENTS_INTERRUPT_MESSAGE"]
+            in_agents_table = 0
+            agents_table_found = 0
+        }
+
+        function write_missing(    i) {
+            for (i = 1; i <= 5; i++) {
+                if (!written[i]) {
+                    print keys[i] " = " values[i]
+                    written[i] = 1
+                }
+            }
+        }
+
+        /^[[:space:]]*\[/ {
+            if (in_agents_table) {
+                write_missing()
+            }
+
+            table_header = $0
+            sub(/[[:space:]]*#.*/, "", table_header)
+            in_agents_table = (table_header ~ /^[[:space:]]*\[[[:space:]]*agents[[:space:]]*\][[:space:]]*$/)
+            if (in_agents_table) {
+                agents_table_found = 1
+            }
+
+            print
+            next
+        }
+
+        in_agents_table {
+            # max_threads 是旧版别名；统一迁移到当前正式键名，避免两个别名同时存在。
+            if ($0 ~ /^[[:space:]]*max_threads[[:space:]]*=/) {
+                if (!written[2]) {
+                    print keys[2] " = " values[2]
+                    written[2] = 1
+                }
+                next
+            }
+
+            for (i = 1; i <= 5; i++) {
+                if ($0 ~ "^[[:space:]]*" keys[i] "[[:space:]]*=") {
+                    if (!written[i]) {
+                        print keys[i] " = " values[i]
+                        written[i] = 1
+                    }
+                    next
+                }
+            }
+        }
+
+        { print }
+
+        END {
+            if (in_agents_table) {
+                write_missing()
+            } else if (!agents_table_found) {
+                print ""
+                print "[agents]"
+                write_missing()
+            }
+        }
+    ' "$path" >"$out"
+}
+
 configure_codex_base() {
     local codex_cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
     local pair
     local key
     local val
     local names
+    local agents_enabled_value
+    local agents_interrupt_value
+    local agents_tmp
     local network_value
     local network_tmp
     local top_level_tmp
@@ -166,11 +263,36 @@ configure_codex_base() {
             ;;
     esac
 
+    case "$CODEX_AGENTS_ENABLED" in
+        enabled) agents_enabled_value="true" ;;
+        disabled) agents_enabled_value="false" ;;
+        *)
+            echo "Invalid CODEX_AGENTS_ENABLED: $CODEX_AGENTS_ENABLED (expected enabled or disabled)" >&2
+            return 1
+            ;;
+    esac
+
+    case "$CODEX_AGENTS_INTERRUPT_MESSAGE" in
+        enabled) agents_interrupt_value="true" ;;
+        disabled) agents_interrupt_value="false" ;;
+        *)
+            echo "Invalid CODEX_AGENTS_INTERRUPT_MESSAGE: $CODEX_AGENTS_INTERRUPT_MESSAGE (expected enabled or disabled)" >&2
+            return 1
+            ;;
+    esac
+
+    if [[ ! "$CODEX_AGENTS_MAX_THREADS" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Invalid CODEX_AGENTS_MAX_THREADS: $CODEX_AGENTS_MAX_THREADS (expected a positive integer)" >&2
+        return 1
+    fi
+
     for pair in "${codex_pairs[@]}"; do
         key="${pair%%|*}"
         val="${pair#*|}"
         validate_codex_config_value "$key" "$val"
     done
+    validate_codex_config_value "default_subagent_model" "$CODEX_SUBAGENT_MODEL"
+    validate_codex_config_value "default_subagent_reasoning_effort" "$CODEX_SUBAGENT_REASONING"
 
     mkdir -p "$(dirname "$codex_cfg")"
     [ -f "$codex_cfg" ] || : > "$codex_cfg"
@@ -238,12 +360,17 @@ configure_codex_base() {
     ' "$codex_cfg" >"$network_tmp"
     mv "$network_tmp" "$codex_cfg"
 
+    agents_tmp="$(mktemp)"
+    update_codex_agents_config \
+        "$codex_cfg" "$agents_tmp" "$agents_enabled_value" "$agents_interrupt_value"
+    mv "$agents_tmp" "$codex_cfg"
+
     if [ "${#codex_missing[@]}" -gt 0 ]; then
         names=""
         for pair in "${codex_missing[@]}"; do names="$names ${pair%%|*}"; done
-        echo "Codex base config -> $codex_cfg (added:$names)"
+        echo "Codex config -> $codex_cfg (added top-level:$names; agents synchronized)"
     else
-        echo "Codex base config -> $codex_cfg (all present)"
+        echo "Codex config -> $codex_cfg (base and agents synchronized)"
     fi
 }
 

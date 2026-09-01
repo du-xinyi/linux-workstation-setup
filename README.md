@@ -202,6 +202,13 @@ ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。�
 `CODEX_SERVICE_TIER` / `CODEX_APPROVAL` / `CODEX_SANDBOX` / `CODEX_NETWORK` 环境变量覆盖。
 其中 `CODEX_NETWORK` 接受 `enabled` 或 `disabled`，并分别映射为 TOML 布尔值 `true` 或 `false`。
 
+脚本同时写入 Codex 的 `[agents]` 全局子代理配置：默认启用子代理，单个会话最多并发 6 个，
+子代理默认使用 `gpt-5.6-terra` 和 `medium` 推理强度，并保留代理被中断时的上下文消息。
+可通过 `CODEX_AGENTS_ENABLED`、`CODEX_AGENTS_MAX_THREADS`、`CODEX_SUBAGENT_MODEL`、
+`CODEX_SUBAGENT_REASONING`、`CODEX_AGENTS_INTERRUPT_MESSAGE` 覆盖；两个开关接受 `enabled` 或
+`disabled`，并发数必须为正整数。已有 `[agents]` 表会原位更新，其它配置和自定义代理不会被覆盖；
+旧版 `max_threads` 会迁移为 `max_concurrent_threads_per_session`。
+
 ## 维护约定
 
 - `vendor/` 用于保存上游发布的原始安装器。安装器文件不提交到 Git 仓库，
