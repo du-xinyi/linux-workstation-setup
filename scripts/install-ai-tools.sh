@@ -15,6 +15,7 @@ readonly SETUP_STEP_TOTAL=6
 # 无需鉴权的 MCP 端点
 readonly MCP_CONTEXT7_URL="https://mcp.context7.com/mcp"
 readonly MCP_PLAYWRIGHT_SPEC="@playwright/mcp@latest"
+readonly OPENCODE_BIN="${OPENCODE_BIN:-$HOME/.opencode/bin/opencode}"
 
 # Codex 基础配置，可通过同名环境变量覆盖
 
@@ -36,146 +37,106 @@ readonly CODEX_SANDBOX="${CODEX_SANDBOX:-workspace-write}"
 # workspace-write 沙箱的网络访问开关
 readonly CODEX_NETWORK="${CODEX_NETWORK:-enabled}"
 
-# 优先沿用已有 OpenCode 配置格式，新配置默认使用 JSONC
-opencode_config_file() {
-    local dir="$HOME/.config/opencode"
-    local candidate
-    for candidate in "$dir/opencode.jsonc" "$dir/opencode.json"; do
-        if [ -e "$candidate" ]; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-    done
-    printf '%s\n' "$dir/opencode.jsonc"
-}
+configure_opencode_mcp() {
+    local config_json
 
-strip_jsonc_comments() {
-    local path="$1"
-
-    if [ ! -f "$path" ]; then
-        printf '{}\n'
-        return 0
+    if ! config_json="$("$OPENCODE_BIN" debug config)"; then
+        echo "Failed to read the OpenCode configuration." >&2
+        return 1
     fi
 
-    awk '
-    {
-        out = ""
-        for (i = 1; i <= length($0); i++) {
-            c = substr($0, i, 1)
-            n = substr($0, i + 1, 1)
+    if jq -e '(.mcp | type) == "object" and (.mcp | has("context7"))' \
+        >/dev/null <<<"$config_json"; then
+        echo "OpenCode MCP server already configured: context7"
+    else
+        "$OPENCODE_BIN" mcp add context7 --url "$MCP_CONTEXT7_URL"
+    fi
 
-            if (in_block) {
-                if (c == "*" && n == "/") {
-                    in_block = 0
-                    i++
-                }
-                continue
-            }
-
-            if (in_str) {
-                out = out c
-                if (escaped) {
-                    escaped = 0
-                } else if (c == "\\") {
-                    escaped = 1
-                } else if (c == quote) {
-                    in_str = 0
-                }
-                continue
-            }
-
-            if (c == "\"" || c == "'\''") {
-                in_str = 1
-                quote = c
-                out = out c
-                continue
-            }
-            if (c == "/" && n == "/") {
-                break
-            }
-            if (c == "/" && n == "*") {
-                in_block = 1
-                i++
-                continue
-            }
-
-            out = out c
-        }
-        print out
-    }' "$path"
+    if jq -e '(.mcp | type) == "object" and (.mcp | has("playwright"))' \
+        >/dev/null <<<"$config_json"; then
+        echo "OpenCode MCP server already configured: playwright"
+    else
+        "$OPENCODE_BIN" mcp add playwright -- npx -y "$MCP_PLAYWRIGHT_SPEC"
+    fi
 }
 
-jsonc_to_temp_json() {
+codex_top_level_has_key() {
+    local path="$1"
+    local key="$2"
+
+    awk -v key="$key" '
+        /^[[:space:]]*\[/ { exit 1 }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { found = 1; exit }
+        END { exit(found ? 0 : 1) }
+    ' "$path"
+}
+
+validate_codex_config_value() {
+    local key="$1"
+    local value="$2"
+
+    if [[ "$value" == *'"'* || "$value" == *\\* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+        echo "Invalid $key: the value cannot contain quotes, backslashes, or newlines." >&2
+        return 1
+    fi
+}
+
+update_codex_top_level_config() {
     local path="$1"
     local out="$2"
 
-    strip_jsonc_comments "$path" \
-        | jq -s 'if length == 0 then {} elif length == 1 and (.[0] | type) == "object" then .[0] elif length == 1 then {} else error("expected one JSON object") end' >"$out" || {
-        echo "Failed to parse $path as JSON/JSONC." >&2
-        return 1
-    }
-}
+    CODEX_CFG_MODEL="$CODEX_MODEL" \
+    CODEX_CFG_REASONING="$CODEX_REASONING" \
+    CODEX_CFG_SERVICE_TIER="$CODEX_SERVICE_TIER" \
+    CODEX_CFG_APPROVAL="$CODEX_APPROVAL" \
+    CODEX_CFG_SANDBOX="$CODEX_SANDBOX" \
+    awk '
+        BEGIN {
+            keys[1] = "model"
+            keys[2] = "model_reasoning_effort"
+            keys[3] = "service_tier"
+            keys[4] = "approval_policy"
+            keys[5] = "sandbox_mode"
+            values[1] = ENVIRON["CODEX_CFG_MODEL"]
+            values[2] = ENVIRON["CODEX_CFG_REASONING"]
+            values[3] = ENVIRON["CODEX_CFG_SERVICE_TIER"]
+            values[4] = ENVIRON["CODEX_CFG_APPROVAL"]
+            values[5] = ENVIRON["CODEX_CFG_SANDBOX"]
+            in_top_level = 1
+        }
 
-edit_jsonc_config() {
-    local mode="$1"
-    local path="$2"
-    shift 2
-    local tmp
-    local next
+        function write_missing(    i) {
+            for (i = 1; i <= 5; i++) {
+                if (!written[i]) {
+                    print keys[i] " = \"" values[i] "\""
+                    written[i] = 1
+                }
+            }
+        }
 
-    tmp="$(mktemp)"
-    next="$(mktemp)"
-    if ! jsonc_to_temp_json "$path" "$tmp"; then
-        rm -f "$tmp" "$next"
-        return 1
-    fi
+        in_top_level && /^[[:space:]]*\[/ {
+            write_missing()
+            in_top_level = 0
+        }
 
-    case "$mode" in
-        ensure-mcp)
-            local context7_url="$1"
-            local playwright_spec="$2"
-            local missing_context7
-            local missing_playwright
-            missing_context7="$(jq 'if ((.mcp | type) == "object" and (.mcp | has("context7"))) then 0 else 1 end' "$tmp")"
-            missing_playwright="$(jq 'if ((.mcp | type) == "object" and (.mcp | has("playwright"))) then 0 else 1 end' "$tmp")"
-            jq --arg context7_url "$context7_url" --arg playwright_spec "$playwright_spec" '
-                if (.mcp | type) == "object" then . else .mcp = {} end
-                | if (.mcp | has("context7")) then . else
-                    .mcp.context7 = {
-                        "type": "remote",
-                        "url": $context7_url,
-                        "enabled": true
-                    }
-                end
-                | if (.mcp | has("playwright")) then . else
-                    .mcp.playwright = {
-                        "type": "local",
-                        "command": ["npx", "-y", $playwright_spec],
-                        "enabled": true
-                    }
-                end
-            ' "$tmp" >"$next"
-            if [ "$missing_context7" -eq 1 ]; then
-                echo "- mcp.context7"
-            fi
-            if [ "$missing_playwright" -eq 1 ]; then
-                echo "- mcp.playwright"
-            fi
-            if [ "$missing_context7" -eq 1 ] || [ "$missing_playwright" -eq 1 ]; then
-                mv "$next" "$path"
-                echo "Updated MCP servers in $path"
-            else
-                echo "MCP servers already configured in $path"
-            fi
-            ;;
-        *)
-            rm -f "$tmp" "$next"
-            echo "Unknown config edit mode: $mode" >&2
-            return 1
-            ;;
-    esac
+        in_top_level {
+            for (i = 1; i <= 5; i++) {
+                if ($0 ~ "^[[:space:]]*" keys[i] "[[:space:]]*=") {
+                    print keys[i] " = \"" values[i] "\""
+                    written[i] = 1
+                    next
+                }
+            }
+        }
 
-    rm -f "$tmp" "$next"
+        { print }
+
+        END {
+            if (in_top_level) {
+                write_missing()
+            }
+        }
+    ' "$path" >"$out"
 }
 
 configure_codex_base() {
@@ -186,6 +147,7 @@ configure_codex_base() {
     local names
     local network_value
     local network_tmp
+    local top_level_tmp
     local codex_pairs=(
         "model|$CODEX_MODEL"
         "model_reasoning_effort|$CODEX_REASONING"
@@ -204,25 +166,25 @@ configure_codex_base() {
             ;;
     esac
 
+    for pair in "${codex_pairs[@]}"; do
+        key="${pair%%|*}"
+        val="${pair#*|}"
+        validate_codex_config_value "$key" "$val"
+    done
+
     mkdir -p "$(dirname "$codex_cfg")"
     [ -f "$codex_cfg" ] || : > "$codex_cfg"
 
     for pair in "${codex_pairs[@]}"; do
         key="${pair%%|*}"
-        val="${pair#*|}"
-        if grep -qE "^${key} =" "$codex_cfg"; then
-            sed -i -E "s|^${key} = .*|${key} = \"${val}\"|" "$codex_cfg"
-        else
+        if ! codex_top_level_has_key "$codex_cfg" "$key"; then
             codex_missing+=("$pair")
         fi
     done
 
-    # 倒序插入缺失键，保证最终顺序与 codex_pairs 一致
-    for ((i=${#codex_missing[@]}-1; i>=0; i--)); do
-        key="${codex_missing[i]%%|*}"
-        val="${codex_missing[i]#*|}"
-        sed -i "1i${key} = \"${val}\"" "$codex_cfg"
-    done
+    top_level_tmp="$(mktemp)"
+    update_codex_top_level_config "$codex_cfg" "$top_level_tmp"
+    mv "$top_level_tmp" "$codex_cfg"
 
     # 网络权限属于 workspace-write 沙箱表，顶层同名字符串不会被 Codex 识别
     network_tmp="$(mktemp)"
@@ -234,14 +196,16 @@ configure_codex_base() {
             network_written = 0
         }
 
-        /^\[/ {
+        /^[[:space:]]*\[/ {
             if (in_workspace_table && !network_written) {
                 print "network_access = " value
                 network_written = 1
             }
 
             before_first_table = 0
-            in_workspace_table = ($0 == "[sandbox_workspace_write]")
+            table_header = $0
+            sub(/[[:space:]]*#.*/, "", table_header)
+            in_workspace_table = (table_header ~ /^[[:space:]]*\[[[:space:]]*sandbox_workspace_write[[:space:]]*\][[:space:]]*$/)
             if (in_workspace_table) {
                 workspace_table_found = 1
             }
@@ -250,11 +214,11 @@ configure_codex_base() {
             next
         }
 
-        before_first_table && /^network_access[[:space:]]*=/ {
+        before_first_table && /^[[:space:]]*network_access[[:space:]]*=/ {
             next
         }
 
-        in_workspace_table && /^network_access[[:space:]]*=/ {
+        in_workspace_table && /^[[:space:]]*network_access[[:space:]]*=/ {
             print "network_access = " value
             network_written = 1
             next
@@ -282,6 +246,10 @@ configure_codex_base() {
         echo "Codex base config -> $codex_cfg (all present)"
     fi
 }
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
 
 echo "======================================"
 echo " Ubuntu/Debian AI CLI Tools Installer (Codex / OpenCode / ast-grep)"
@@ -316,7 +284,7 @@ curl -fsSL https://opencode.ai/install | bash
 
 print_step 5 "Checking the environment"
 printf 'Codex:      '; codex --version || true
-printf 'OpenCode:   '; "$HOME/.opencode/bin/opencode" --version || true
+printf 'OpenCode:   '; "$OPENCODE_BIN" --version || true
 printf 'ast-grep:   '; sg --version || true
 
 # MCP 服务器
@@ -324,10 +292,7 @@ printf 'ast-grep:   '; sg --version || true
 
 print_step 6 "Installing MCP servers: Context7 / Playwright"
 
-opencode_config="$(opencode_config_file)"
-mkdir -p "$(dirname "$opencode_config")"
-
-edit_jsonc_config ensure-mcp "$opencode_config" "$MCP_CONTEXT7_URL" "$MCP_PLAYWRIGHT_SPEC"
+configure_opencode_mcp
 
 # 服务器尚未注册时 codex mcp get 会返回非零状态
 codex mcp get context7 >/dev/null 2>&1 \

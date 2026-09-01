@@ -190,9 +190,9 @@ AI CLI 工具由独立的 `ai-tools` 组件安装（依赖 `npm` 组件先装好
 `@ast-grep/cli` 由 npm 全局安装（`@ast-grep/cli` 提供 `sg` 命令），OpenCode 改由官方安装脚本
 `curl -fsSL https://opencode.ai/install | bash` 安装到 `~/.opencode/bin`，并注册两个 MCP 服务器
 （Context7 / Playwright）。Context7 用远程 `https://mcp.context7.com/mcp`，Playwright 用本地 stdio
-`npx -y @playwright/mcp@latest`，两者均无需鉴权。OpenCode 端写入
-`opencode.json[c]` 的 `mcp` 段（仅新增缺失项，不覆盖已有配置）；Codex 端用 `codex mcp add`
-注册。
+`npx -y @playwright/mcp@latest`，两者均无需鉴权。OpenCode 端通过 `opencode mcp add` 写入
+`opencode.json[c]` 的 `mcp` 段（仅新增缺失项，不覆盖已有配置，并保留 JSONC 注释）；
+Codex 端用 `codex mcp add` 注册。
 
 ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。建议组合为
 `gpt-5.6-sol`、`high`、`default`、`on-request`、`workspace-write` 和启用网络；模型、推理强度、
