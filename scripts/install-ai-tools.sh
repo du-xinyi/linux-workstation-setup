@@ -20,10 +20,10 @@ readonly OPENCODE_BIN="${OPENCODE_BIN:-$HOME/.opencode/bin/opencode}"
 # Codex 基础配置，可通过同名环境变量覆盖
 
 # 默认模型
-readonly CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
+readonly CODEX_MODEL="${CODEX_MODEL:-gpt-6-astra}"
 
 # 推理强度
-readonly CODEX_REASONING="${CODEX_REASONING:-high}"
+readonly CODEX_REASONING="${CODEX_REASONING:-medium}"
 
 # 服务等级
 readonly CODEX_SERVICE_TIER="${CODEX_SERVICE_TIER:-default}"
