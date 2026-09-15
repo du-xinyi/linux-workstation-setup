@@ -8,6 +8,7 @@
 ├── scripts/                       # 自定义安装与配置脚本
 │   ├── install-fcitx5-rime.sh
 │   ├── install-fonts.sh
+│   ├── install-git.sh
 │   ├── install-miniconda.sh
 │   ├── install-mirrors.sh
 │   ├── install-nodejs.sh
@@ -56,6 +57,7 @@
 
 ```bash
 ./setup.sh mirrors
+./setup.sh git
 ./setup.sh npm
 ./setup.sh fcitx5-rime
 ./setup.sh fonts
@@ -69,7 +71,7 @@
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
-Mirrors、Fonts、Zsh、Node.js/npm、Rust、Ruby、C/C++、Miniconda、Extras、Fcitx 5 Rime。Mirrors
+Mirrors、Git、Fonts、Zsh、Node.js/npm、AI Tools、Rust、Ruby、C/C++、Miniconda、Extras、Fcitx 5 Rime。Mirrors
 排在最前，使后续组件的包下载直接走国内镜像；由于 Zsh 脚本会生成 `~/.zshrc`，它会在
 Node.js、Rust、Ruby、C/C++ 和 Miniconda 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
 Ruby 之前安装，Ruby 构建时会优先加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次
@@ -98,6 +100,14 @@ Mirrors 脚本将 apt、pip 与 conda 的软件源切换到国内镜像，默认
 ```bash
 sudo cp /etc/apt/sources.list.orig /etc/apt/sources.list
 ```
+
+Git 脚本通过系统 apt 源安装 `git`、`ca-certificates` 和 `openssh-client`，支持 HTTPS
+与 SSH 访问远程仓库，安装后输出 Git 版本。可单独运行 `./setup.sh git` 或
+`./scripts/install-git.sh`；全量安装时在 Mirrors 之后运行。
+脚本会将当前用户的全局 `credential.helper` 设置为 `store`，替换已有的全局凭据助手配置。
+使用 HTTPS 仓库地址时，首次认证输入用户名和访问令牌（Token），认证成功后 Git 会保存凭据，
+后续自动复用。凭据以明文保存，通常位于 `~/.git-credentials`，请勿提交或共享该文件；
+Token 过期或撤销后需要重新认证。
 
 字体脚本默认安装 DejaVu、Liberation、Fira Code、JetBrains Mono、Cascadia
 Code、Noto（含扩展、等宽、CJK 和彩色 Emoji）、Carlito、Caladea，以及用于
@@ -131,7 +141,6 @@ Rust 和 Miniconda 组件依赖 `vendor/` 中的上游安装器。安装器不�
 Extras 脚本安装常用拓展程序：
 
 - **bubblewrap** — 非特权容器运行时，为 Flatpak 提供沙箱隔离，并配置内核 user namespaces 及 AppArmor 豁免
-- **Solaar** — Logitech 设备管理器（`ppa:solaar-unifying/stable`），将当前用户加入 `plugdev` 组
 - **Hardinfo2** — 系统硬件信息与基准测试工具（apt）
 - **System Monitor** — GNOME 系统资源监控器（apt）
 - **indicator-sysmonitor** — 顶栏显示 CPU/内存/网络等指标的指示器（`ppa:fossfreedom/indicator-sysmonitor`）
@@ -150,7 +159,6 @@ Extras 脚本安装常用拓展程序：
 - **Pinta** — 轻量图像编辑器（Flatpak）
 - **Mission Center / Loupe** — 现代系统资源监控器与图片查看器（Flatpak）
 
-安装后需重新登录使 `plugdev` 组成员身份生效。
 
 Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 维护分支
 中的最新补丁版，并根据当前 Shell 写入 rbenv 初始化配置。可通过

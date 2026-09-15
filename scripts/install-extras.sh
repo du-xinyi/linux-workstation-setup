@@ -8,7 +8,7 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=10
+readonly SETUP_STEP_TOTAL=8
 
 # 通过 dpkg 查询 apt 包安装状态，用于安装后的验证
 check_pkg() { dpkg -s "$1" >/dev/null 2>&1 && echo "installed" || echo "MISSING"; }
@@ -47,22 +47,18 @@ require_sudo
 print_step 1 "Installing dependencies"
 sudo apt-get install -y bubblewrap software-properties-common flatpak gnome-software-plugin-flatpak
 
-# Solaar 稳定 PPA 提供比系统仓库更新的 Logitech 设备管理器
-print_step 2 "Adding Solaar PPA"
-sudo add-apt-repository -y ppa:solaar-unifying/stable
-
 # indicator-sysmonitor 在顶栏显示 CPU/内存/网络等指标，仅在 PPA 中提供
-print_step 3 "Adding indicator-sysmonitor PPA"
+print_step 2 "Adding indicator-sysmonitor PPA"
 sudo add-apt-repository -y ppa:fossfreedom/indicator-sysmonitor
 
 # 添加 Flathub 作为 Flatpak 应用来源
-print_step 4 "Adding Flathub remote"
+print_step 3 "Adding Flathub remote"
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-apt_get_update_step 5
+apt_get_update_step 4
 
 # ubuntu-restricted-extras 会拉入 ttf-mscorefonts-installer，需预先接受微软字体 EULA 避免交互式卡住
-print_step 6 "Installing apt extras"
+print_step 5 "Installing apt extras"
 echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | sudo debconf-set-selections
 sudo apt-get install -y \
     baobab \
@@ -82,33 +78,24 @@ sudo apt-get install -y \
     p7zip-full \
     p7zip-rar \
     smartmontools \
-    solaar \
     ubuntu-restricted-extras \
     unrar \
     vlc \
     wget
 
 # 使用 Flatpak 安装桌面应用，获取独立运行环境或更新版本
-print_step 7 "Installing Mission Center, Loupe, and Pinta"
+print_step 6 "Installing Mission Center, Loupe, and Pinta"
 flatpak install -y flathub \
     io.missioncenter.MissionCenter \
     org.gnome.Loupe \
     com.github.PintaProject.Pinta
 
-# Solaar 需要访问部分 HID 设备，加入 plugdev 组提供非特权访问权限
-print_step 8 "Adding current user to plugdev group"
-if getent group plugdev | grep -qw "$USER"; then
-    echo "  $USER already in plugdev; skipping."
-else
-    sudo usermod -a -G plugdev "$USER"
-fi
-
 # bubblewrap 和 Flatpak 依赖非特权用户命名空间，需启用并解除 AppArmor 对其的限制
-print_step 9 "Configuring unprivileged user namespaces"
+print_step 7 "Configuring unprivileged user namespaces"
 apply_sysctl kernel.unprivileged_userns_clone 1 /etc/sysctl.d/99-userns.conf
 apply_sysctl kernel.apparmor_restrict_unprivileged_userns 0 /etc/sysctl.d/99-apparmor-userns.conf
 
-print_step 10 "Checking installed extras"
+print_step 8 "Checking installed extras"
 printf '  %-24s %s\n' "bubblewrap" "$(check_pkg bubblewrap)"
 printf '  %-24s %s\n' "flatpak" "$(check_pkg flatpak)"
 printf '  %-24s %s\n' "curl" "$(check_pkg curl)"
@@ -120,7 +107,6 @@ printf '  %-24s %s\n' "nvme-cli" "$(check_pkg nvme-cli)"
 printf '  %-24s %s\n' "smartmontools" "$(check_pkg smartmontools)"
 printf '  %-24s %s\n' "System Monitor" "$(check_pkg gnome-system-monitor)"
 printf '  %-24s %s\n' "indicator-sysmonitor" "$(check_pkg indicator-sysmonitor)"
-printf '  %-24s %s\n' "Solaar" "$(check_pkg solaar)"
 printf '  %-24s %s\n' "Blueman" "$(check_pkg blueman)"
 printf '  %-24s %s\n' "VLC" "$(check_pkg vlc)"
 printf '  %-24s %s\n' "ubuntu-restricted-extras" "$(check_pkg ubuntu-restricted-extras)"
@@ -141,5 +127,4 @@ echo
 echo "======================================"
 echo "Installation complete"
 echo "======================================"
-echo "Log out and back in for the plugdev group membership to take effect."
 echo "A reboot is recommended to ensure the kernel parameters persist."

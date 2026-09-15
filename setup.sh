@@ -18,6 +18,7 @@ Usage:
 Components:
   all             Install all components in the recommended order
   mirrors         Switch apt/pip/conda sources to a domestic mirror
+  git             Install Git with HTTPS and SSH support
   npm             Install Node.js, npm, and common frontend CLI tools
   ai-tools        Install AI CLI tools (Codex, OpenCode, ast-grep) and MCP servers
   fcitx5-rime     Install Fcitx 5, Rime, and Rime Ice
@@ -27,7 +28,7 @@ Components:
   rust            Install Rust using the official rustup installer
   cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal + common libs
   miniconda       Install Miniconda using the official installer
-  extras          Install extra applications (Solaar, etc.)
+  extras          Install extra applications
   list            List available components
   help            Show this help
 
@@ -37,6 +38,7 @@ Examples:
   ./setup.sh all --continue-on-error
   ./setup.sh all --skip rust,miniconda
   ./setup.sh npm
+  ./setup.sh git
   ./setup.sh ai-tools
   ./setup.sh zsh
   ./setup.sh ruby
@@ -49,7 +51,7 @@ EOF
 }
 
 list_components() {
-    printf '%s\n' all mirrors fonts zsh npm ai-tools rust ruby cpp miniconda extras fcitx5-rime
+    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp miniconda extras fcitx5-rime
 }
 
 normalize_component() {
@@ -60,7 +62,7 @@ normalize_component() {
         cpp|cxx|c++)
             printf '%s\n' cpp
             ;;
-        npm|ai-tools|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
+        git|npm|ai-tools|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
         rime)
@@ -77,7 +79,7 @@ normalize_component() {
 
 component_requires_apt() {
     case "$1" in
-        fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|extras) return 0 ;;
+        git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|extras) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -154,6 +156,9 @@ run_component() {
         mirrors)
             "$ROOT_DIR/scripts/install-mirrors.sh" "$@"
             ;;
+        git)
+            "$ROOT_DIR/scripts/install-git.sh" "$@"
+            ;;
         npm)
             "$ROOT_DIR/scripts/install-nodejs.sh" "$@"
             ;;
@@ -229,6 +234,7 @@ run_all() {
 
 readonly ALL_COMPONENTS=(
     mirrors
+    git
     fonts
     zsh
     npm

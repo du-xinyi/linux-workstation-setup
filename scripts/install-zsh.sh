@@ -15,10 +15,11 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=5
+readonly SETUP_STEP_TOTAL=6
 readonly ZSH_DIR="${ZSH_DIR:-$HOME/.oh-my-zsh}"
 readonly ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-$ZSH_DIR/custom}"
 readonly ZSHRC="$HOME/.zshrc"
+readonly LOGIN_USER="$(id -un)"
 
 require_non_root
 require_debian_like
@@ -31,6 +32,12 @@ else
     sudo apt-get update
 fi
 sudo apt-get install -y zsh git
+
+readonly ZSH_BIN="$(command -v zsh)"
+if [ -z "$ZSH_BIN" ] || [ ! -x "$ZSH_BIN" ]; then
+    echo "Zsh was installed but no executable was found in PATH." >&2
+    exit 1
+fi
 
 print_step 2 "Installing or updating Oh My Zsh"
 if [ -d "$ZSH_DIR/.git" ]; then
@@ -61,10 +68,12 @@ done
 
 print_step 4 "Writing the Zsh configuration"
 zshrc_tmp="$(mktemp "${ZSHRC}.tmp.XXXXXX")"
-cat > "$zshrc_tmp" <<'EOF'
+
+# 使用安装时的实际 Oh My Zsh 路径，避免自定义 ZSH_DIR 时配置仍指向默认目录。
+printf 'export ZSH=%q\n' "$ZSH_DIR" > "$zshrc_tmp"
+cat >> "$zshrc_tmp" <<'EOF_ZSHRC'
 # 由 linux-workstation-setup/scripts/install-zsh.sh 自动生成
 
-export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="ys"
 
 zstyle ':omz:update' mode reminder
@@ -97,29 +106,69 @@ HISTSIZE=50000
 
 # 文件历史
 SAVEHIST=50000
+EOF_ZSHRC
 
-EOF
-
-# 先检查语法，再用独立的 Zsh 进程实际加载配置
+# 先检查语法，再用独立的 Zsh 进程实际加载配置。
 zsh -n "$zshrc_tmp"
 zsh -df -c 'source "$1"' zsh "$zshrc_tmp"
 
-# 仅在两项检查都通过后替换现有文件，避免写入无效的 .zshrc
-chmod 644 "$zshrc_tmp"
-mv -f "$zshrc_tmp" "$ZSHRC"
-zshrc_tmp=""
+if [ -f "$ZSHRC" ] && cmp -s "$zshrc_tmp" "$ZSHRC"; then
+    echo "Zsh configuration is already up to date."
+    rm -f "$zshrc_tmp"
+    zshrc_tmp=""
+else
+    if [ -e "$ZSHRC" ]; then
+        zshrc_backup="${ZSHRC}.backup.$(date +%Y%m%d-%H%M%S)"
+        cp -a "$ZSHRC" "$zshrc_backup"
+        printf 'Existing configuration backed up to: %s\n' "$zshrc_backup"
+    fi
 
-print_step 5 "Checking the configuration"
-printf '  %-12s %s\n' "Zsh" "$(zsh --version)"
-printf '  %-12s %s\n' "Oh My Zsh" "$ZSH_DIR"
-printf '  %-12s %s\n' "Config" "$ZSHRC"
-
-if [ "${SHELL:-}" != "$(command -v zsh)" ]; then
-    echo
-    echo "Default shell:"
-    printf '  %s\n' "chsh -s $(command -v zsh)"
+    # 仅在检查通过后原子替换现有文件，避免留下无效配置。
+    chmod 644 "$zshrc_tmp"
+    mv -f "$zshrc_tmp" "$ZSHRC"
+    zshrc_tmp=""
 fi
 
+print_step 5 "Setting Zsh as the default shell"
+if ! grep -Fxq "$ZSH_BIN" /etc/shells; then
+    echo "Zsh executable is not listed in /etc/shells: $ZSH_BIN" >&2
+    echo "Refusing to change the login shell automatically." >&2
+    exit 1
+fi
+
+current_login_shell="$(getent passwd "$LOGIN_USER" | cut -d: -f7)"
+if [ -z "$current_login_shell" ]; then
+    echo "Could not determine the current login shell for user: $LOGIN_USER" >&2
+    exit 1
+fi
+
+if [ "$current_login_shell" = "$ZSH_BIN" ]; then
+    echo "Default shell is already Zsh: $ZSH_BIN"
+else
+    printf 'Changing default shell: %s -> %s\n' "$current_login_shell" "$ZSH_BIN"
+    sudo chsh -s "$ZSH_BIN" "$LOGIN_USER"
+fi
+
+print_step 6 "Verifying the installation"
+configured_login_shell="$(getent passwd "$LOGIN_USER" | cut -d: -f7)"
+if [ "$configured_login_shell" != "$ZSH_BIN" ]; then
+    echo "Failed to set the default shell to Zsh." >&2
+    printf 'Expected: %s\n' "$ZSH_BIN" >&2
+    printf 'Actual:   %s\n' "$configured_login_shell" >&2
+    exit 1
+fi
+
+printf '  %-16s %s\n' "Zsh" "$(zsh --version)"
+printf '  %-16s %s\n' "Oh My Zsh" "$ZSH_DIR"
+printf '  %-16s %s\n' "Config" "$ZSHRC"
+printf '  %-16s %s\n' "Default shell" "$configured_login_shell"
+
 echo
-echo "Apply now:"
-printf '  %s\n' "exec zsh"
+echo "Zsh installation is complete."
+if [ "${SHELL:-}" = "$ZSH_BIN" ]; then
+    echo "This session is already using Zsh as its login shell."
+else
+    echo "The current terminal may still be Bash because its environment was created before chsh ran."
+    echo "Log out and log back in, or open a new login session, to use Zsh by default."
+    printf 'To switch this terminal immediately, run: exec %q -l\n' "$ZSH_BIN"
+fi
