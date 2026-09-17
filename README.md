@@ -74,6 +74,10 @@ Fcitx 5 安装脚本会清空框架层的启用/禁用、临时切换、输入�
 保留 `Up` / `Down` 翻页、`Shift+Tab` / `Tab` 选择候选词及 `Ctrl+Alt+P` 切换预编辑。
 Rime 自身的 Shift 中英文切换设置不变；输入法分组与其他行为设置保留。
 重复安装会重新应用这些快捷键；当前会话已运行 fcitx5 时自动重载配置。
+脚本保留 `im-config -n fcitx5`，同时在 `${XDG_CONFIG_HOME:-~/.config}/autostart/`
+写入 `org.fcitx.Fcitx5.desktop`，登录时执行 `/usr/bin/fcitx5 -d`。
+“启动应用程序”中可查看名为 **Fcitx 5** 的自启项；可注销后重新登录，
+通过 `pgrep -a -x fcitx5` 验证进程是否自动启动。
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：

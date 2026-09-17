@@ -15,6 +15,24 @@ readonly PLUM_DIR="${PLUM_DIR:-$HOME/.local/share/plum}"
 readonly RIME_DIR="${RIME_DIR:-$HOME/.local/share/fcitx5/rime}"
 readonly RIME_RECIPE="${RIME_RECIPE:-iDvel/rime-ice}"
 
+# 显式注册桌面登录自启，不只依赖 im-config 的会话启动链路
+configure_fcitx5_autostart() {
+    local autostart_dir="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+    mkdir -p "$autostart_dir"
+    cat > "$autostart_dir/org.fcitx.Fcitx5.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Fcitx 5
+Comment=启动输入法
+Exec=/usr/bin/fcitx5 -d
+TryExec=/usr/bin/fcitx5
+Icon=fcitx
+Terminal=false
+Hidden=false
+X-GNOME-Autostart-enabled=true
+EOF
+}
+
 # 替换快捷键段，保留 Behavior 等其他设置及独立的输入法分组文件。
 configure_fcitx5_hotkeys() (
     config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5"
@@ -86,6 +104,7 @@ sudo apt-get install -y \
 
 print_step 3 "Setting Fcitx 5 as the default input method framework"
 im-config -n fcitx5
+configure_fcitx5_autostart
 
 print_step 4 "Installing or updating Plum"
 if [ -d "$PLUM_DIR/.git" ]; then
