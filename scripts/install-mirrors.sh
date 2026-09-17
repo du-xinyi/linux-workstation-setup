@@ -96,23 +96,9 @@ collect_apt_source_files() {
     done
 }
 
-# 判断文件是否仍引用官方域名(即尚未换源)
-apt_file_uses_official() {
-    local f="$1"
-    local domain
-
-    for domain in "${APT_OFFICIAL_DOMAINS[@]}"; do
-        if grep -q "$domain" "$f" 2>/dev/null; then
-            return 0
-        fi
-    done
-    return 1
-}
-
 configure_apt() {
     local f
     local domain
-    local backup_created=0
     local sed_args=()
 
     # 对每个官方域名生成替换规则,http 与 https 均升级为镜像 https
@@ -123,19 +109,10 @@ configure_apt() {
 
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        # 仅当文件仍含官方域名,且 .orig 不存在时备份,保证 .orig 始终为官方源
-        if apt_file_uses_official "$f" && [ ! -f "${f}.orig" ]; then
-            sudo cp -a "$f" "${f}.orig"
-            backup_created=1
-            printf '  backed up  %s -> %s.orig\n' "$f" "$f"
-        fi
         sudo sed -i "${sed_args[@]}" "$f"
         printf '  updated    %s\n' "$f"
     done < <(collect_apt_source_files)
 
-    if [ "$backup_created" -eq 0 ]; then
-        echo "  no official-source backup needed (already mirrored or no official sources)"
-    fi
 }
 
 configure_pip() {
@@ -217,5 +194,3 @@ echo
 echo "======================================"
 echo " Mirror configuration complete"
 echo "======================================"
-echo "To restore official apt sources later, copy the .orig backups:"
-echo "  sudo cp /etc/apt/sources.list.orig /etc/apt/sources.list"

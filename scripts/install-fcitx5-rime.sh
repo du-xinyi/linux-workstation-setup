@@ -15,6 +15,54 @@ readonly PLUM_DIR="${PLUM_DIR:-$HOME/.local/share/plum}"
 readonly RIME_DIR="${RIME_DIR:-$HOME/.local/share/fcitx5/rime}"
 readonly RIME_RECIPE="${RIME_RECIPE:-iDvel/rime-ice}"
 
+# 替换快捷键段，保留 Behavior 等其他设置及独立的输入法分组文件。
+configure_fcitx5_hotkeys() (
+    config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/fcitx5"
+    mkdir -p "$config_dir"
+    config="$config_dir/config"
+    tmpfile="$(mktemp "$config_dir/config.XXXXXX")"
+    trap 'rm -f -- "$tmpfile"' EXIT
+    cat > "$tmpfile" <<'EOF'
+[Hotkey]
+TriggerKeys=
+EnumerateWithTriggerKeys=True
+AltTriggerKeys=
+EnumerateForwardKeys=
+EnumerateBackwardKeys=
+EnumerateSkipFirst=False
+EnumerateGroupForwardKeys=
+EnumerateGroupBackwardKeys=
+ActivateKeys=
+DeactivateKeys=
+
+[Hotkey/PrevPage]
+0=Up
+
+[Hotkey/NextPage]
+0=Down
+
+[Hotkey/PrevCandidate]
+0=Shift+Tab
+
+[Hotkey/NextCandidate]
+0=Tab
+
+[Hotkey/TogglePreedit]
+0=Control+Alt+P
+
+EOF
+    if [ -f "$config" ]; then
+        awk '
+            /^\[/ { hotkey = ($0 ~ /^\[Hotkey(\/|\])/) }
+            !hotkey { print }
+        ' "$config" >> "$tmpfile"
+    fi
+    mv -- "$tmpfile" "$config"
+    if fcitx5-remote --check >/dev/null 2>&1; then
+        fcitx5-remote -r
+    fi
+)
+
 echo "======================================"
 echo " Fcitx 5 + Rime Ice Installer"
 echo "======================================"
@@ -89,6 +137,9 @@ patch:
     - schema: rime_ice
   menu/page_size: 9
 EOF
+
+print_step 8 "Configuring Fcitx 5 hotkeys"
+configure_fcitx5_hotkeys
 
 echo
 echo "======================================"

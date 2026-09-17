@@ -117,12 +117,6 @@ if [ -f "$ZSHRC" ] && cmp -s "$zshrc_tmp" "$ZSHRC"; then
     rm -f "$zshrc_tmp"
     zshrc_tmp=""
 else
-    if [ -e "$ZSHRC" ]; then
-        zshrc_backup="${ZSHRC}.backup.$(date +%Y%m%d-%H%M%S)"
-        cp -a "$ZSHRC" "$zshrc_backup"
-        printf 'Existing configuration backed up to: %s\n' "$zshrc_backup"
-    fi
-
     # 仅在检查通过后原子替换现有文件，避免留下无效配置。
     chmod 644 "$zshrc_tmp"
     mv -f "$zshrc_tmp" "$ZSHRC"

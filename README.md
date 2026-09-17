@@ -18,6 +18,7 @@
 │   ├── install-extras.sh
 │   ├── install-zsh.sh
 │   ├── install-rust.sh
+│   ├── system_status.py           # indicator-sysmonitor 自定义状态采集
 │   └── lib/
 │       └── common.sh              # 安装脚本公共函数
 └── vendor/                        # 本地上游安装器目录
@@ -69,6 +70,11 @@
 ./setup.sh extras
 ```
 
+Fcitx 5 安装脚本会清空框架层的启用/禁用、临时切换、输入法轮换和分组切换快捷键。
+保留 `Up` / `Down` 翻页、`Shift+Tab` / `Tab` 选择候选词及 `Ctrl+Alt+P` 切换预编辑。
+Rime 自身的 Shift 中英文切换设置不变；输入法分组与其他行为设置保留。
+重复安装会重新应用这些快捷键；当前会话已运行 fcitx5 时自动重载配置。
+
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
 Mirrors、Git、Fonts、Zsh、Node.js/npm、AI Tools、Rust、Ruby、C/C++、Miniconda、Extras、Fcitx 5 Rime。Mirrors
@@ -87,19 +93,11 @@ Mirrors 脚本将 apt、pip 与 conda 的软件源切换到国内镜像，默认
 - **apt**：扫描 `/etc/apt/sources.list` 与 `/etc/apt/sources.list.d/` 下的 `*.list`、
   `*.sources`（含 Ubuntu 24.04 / Debian 12 的 deb822 格式），将 `archive.ubuntu.com`、
   `security.ubuntu.com`、`deb.debian.org`、`security.debian.org` 替换为镜像域名并升级为
-  HTTPS，路径保持不变。仅当文件仍引用官方域名时，首次备份为同名 `.orig` 文件，确保
-  `.orig` 始终是官方源；换源后执行一次 `apt-get update`。脚本可重复运行且幂等。
-- **pip**：写入 `~/.config/pip/pip.conf`（XDG 标准位置），并同步到 `~/.pip/pip.conf`
-  以兼容旧版 pip；首次覆盖前各备份一次为 `.bak`。
+  HTTPS，路径保持不变；换源后执行一次 `apt-get update`。脚本可重复运行且幂等。
+- **pip**：写入 `~/.config/pip/pip.conf`（XDG 标准位置）。
 - **conda**：写入 `~/.condarc`，镜像化 `defaults` 的 `main`/`r` 渠道，并把 `conda-forge`、
   `pytorch` 指向镜像；若 conda 已安装，会清空索引缓存。conda 尚未安装时配置同样写入，
   待 Miniconda 安装后即生效。
-
-恢复官方 apt 源：
-
-```bash
-sudo cp /etc/apt/sources.list.orig /etc/apt/sources.list
-```
 
 Git 脚本通过系统 apt 源安装 `git`、`ca-certificates` 和 `openssh-client`，支持 HTTPS
 与 SSH 访问远程仓库，安装后输出 Git 版本。可单独运行 `./setup.sh git` 或
@@ -159,6 +157,25 @@ Extras 脚本安装常用拓展程序：
 - **Pinta** — 轻量图像编辑器（Flatpak）
 - **Mission Center / Loupe** — 现代系统资源监控器与图片查看器（Flatpak）
 
+Extras 会将 `scripts/system_status.py` 安装到
+`~/.local/lib/indicator-sysmonitor/system_status.py`，并配置 indicator-sysmonitor
+每 3 秒显示一行：`CPU 3% 35°C 35% 25W | GPU 7% 56°C 14% 80W`。
+CPU 组依次为占用率、温度、内存占用率、封装功耗；GPU 组依次为占用率、温度、显存占用率、功耗。
+采集使用系统 Python 与 `python3-psutil`，每次只调用一次 `nvidia-smi` 查询 GPU 0。
+需要已安装 NVIDIA 驱动；缺失或不可用的指标显示 `N/A`。CPU 温度支持 Intel
+`coretemp` 与 AMD `k10temp`。
+CPU 功耗根据 [Linux powercap](https://docs.kernel.org/power/powercap/powercap.html)
+中 `package-0` 的 RAPL 能量差计算，复用 CPU 占用率的 0.2 秒采样窗口；
+接口不存在或当前用户无读取权限时显示 `N/A`。GPU 功耗读取 `nvidia-smi` 的 `power.draw`。
+
+配置写入 `~/.indicator-sysmonitor.json`，
+保留其他传感器，并在 `${XDG_CONFIG_HOME:-~/.config}/autostart/` 创建登录自启项；
+重复安装会重新应用上述显示格式、刷新间隔和自启设置。
+安装后启动或重启 indicator-sysmonitor 生效，也可单独运行采集脚本检查输出：
+
+```bash
+/usr/bin/python3 ~/.local/lib/indicator-sysmonitor/system_status.py
+```
 
 Ruby 脚本通过 Git 安装 rbenv 和 ruby-build，默认自动选择 Ruby 3.4 维护分支
 中的最新补丁版，并根据当前 Shell 写入 rbenv 初始化配置。可通过

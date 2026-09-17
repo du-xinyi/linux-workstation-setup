@@ -16,6 +16,31 @@ check_pkg() { dpkg -s "$1" >/dev/null 2>&1 && echo "installed" || echo "MISSING"
 # 通过 flatpak info 查询 Flatpak 应用安装状态，用于安装后的验证
 check_fp() { flatpak info "$1" >/dev/null 2>&1 && echo "installed" || echo "MISSING"; }
 
+# 使用自定义传感器显示完整一行，保留其他传感器并开启登录自启。
+configure_sysmonitor() {
+    local status_script="$HOME/.local/lib/indicator-sysmonitor/system_status.py"
+    install -Dm755 "$ROOT_DIR/scripts/system_status.py" "$status_script"
+    /usr/bin/python3 - "$status_script" <<'PY'
+import json
+from pathlib import Path
+import shlex
+import sys
+
+config_path = Path.home() / ".indicator-sysmonitor.json"
+config = json.loads(config_path.read_text()) if config_path.exists() else {}
+config["on_startup"] = True
+config.setdefault("sensors", {})["workstation_status"] = [
+    "CPU / NVIDIA GPU status",
+    shlex.join(["/usr/bin/python3", sys.argv[1]]),
+]
+config["custom_text"] = "{workstation_status}"
+config["interval"] = 3
+config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
+PY
+    install -Dm644 /usr/share/applications/indicator-sysmonitor.desktop \
+        "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/indicator-sysmonitor.desktop"
+}
+
 # Ubuntu 24.04 仓库没有 hardinfo2，使用上游发布的预编译包。
 # 上游仅在 pre 发布中提供二进制包，正式版由发行版自行构建。
 # https://github.com/hardinfo2/hardinfo2/releases/tag/release-2.3.0pre
@@ -112,11 +137,14 @@ sudo apt-get install -y \
     nvme-cli \
     p7zip-full \
     p7zip-rar \
+    python3-psutil \
     smartmontools \
     ubuntu-restricted-extras \
     unrar \
     vlc \
     wget
+
+configure_sysmonitor
 
 print_step 6 "Installing Hardinfo2"
 install_hardinfo2
@@ -166,3 +194,4 @@ echo "======================================"
 echo "Installation complete"
 echo "======================================"
 echo "A reboot is recommended to ensure the kernel parameters persist."
+echo "Start or restart indicator-sysmonitor to load the CPU/GPU display configuration."
