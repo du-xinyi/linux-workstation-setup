@@ -8,13 +8,49 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=8
+readonly SETUP_STEP_TOTAL=9
 
 # 通过 dpkg 查询 apt 包安装状态，用于安装后的验证
 check_pkg() { dpkg -s "$1" >/dev/null 2>&1 && echo "installed" || echo "MISSING"; }
 
 # 通过 flatpak info 查询 Flatpak 应用安装状态，用于安装后的验证
 check_fp() { flatpak info "$1" >/dev/null 2>&1 && echo "installed" || echo "MISSING"; }
+
+# Ubuntu 24.04 仓库没有 hardinfo2，使用上游发布的预编译包。
+# 上游仅在 pre 发布中提供二进制包，正式版由发行版自行构建。
+# https://github.com/hardinfo2/hardinfo2/releases/tag/release-2.3.0pre
+install_hardinfo2() (
+    # 子 shell 的 EXIT trap 确保下载或安装失败时也清理临时文件。
+    if [ "${ID:-}" != "ubuntu" ] || [ "${VERSION_ID:-}" != "24.04" ]; then
+        sudo apt-get install -y hardinfo2
+        return
+    fi
+
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+        amd64) asset_arch=amd64 ;;
+        arm64) asset_arch=aarch64 ;;
+        *)
+            echo "No upstream Ubuntu 24.04 Hardinfo2 package configured for $arch." >&2
+            exit 1
+            ;;
+    esac
+
+    tmpdir="$(mktemp -d /tmp/hardinfo2.XXXXXX)"
+    trap 'rm -rf -- "$tmpdir"' EXIT
+    deb="$tmpdir/hardinfo2.deb"
+    url="https://github.com/hardinfo2/hardinfo2/releases/download/release-2.3.0pre/hardinfo2_2.3.0-Ubuntu-24.04_${asset_arch}.deb"
+    curl -fL --retry 3 --connect-timeout 15 --max-time 300 -o "$deb" "$url"
+    if [ "$(dpkg-deb -f "$deb" Package)" != "hardinfo2" ] ||
+       [ "$(dpkg-deb -f "$deb" Architecture)" != "$arch" ]; then
+        echo "Downloaded Hardinfo2 package has an unexpected name or architecture." >&2
+        exit 1
+    fi
+    # 允许 APT 的 _apt 用户读取安装包，并由 APT 处理依赖。
+    chmod 755 "$tmpdir"
+    chmod 644 "$deb"
+    sudo apt-get install -y "$deb"
+)
 
 # 内核不支持该参数或当前值已是目标值时跳过；仅在需要变更时写入持久配置并立即应用
 apply_sysctl() {
@@ -69,7 +105,6 @@ sudo apt-get install -y \
     gnome-system-monitor \
     gnome-tweaks \
     gparted \
-    hardinfo2 \
     indicator-sysmonitor \
     lm-sensors \
     ncdu \
@@ -83,19 +118,22 @@ sudo apt-get install -y \
     vlc \
     wget
 
+print_step 6 "Installing Hardinfo2"
+install_hardinfo2
+
 # 使用 Flatpak 安装桌面应用，获取独立运行环境或更新版本
-print_step 6 "Installing Mission Center, Loupe, and Pinta"
+print_step 7 "Installing Mission Center, Loupe, and Pinta"
 flatpak install -y flathub \
     io.missioncenter.MissionCenter \
     org.gnome.Loupe \
     com.github.PintaProject.Pinta
 
 # bubblewrap 和 Flatpak 依赖非特权用户命名空间，需启用并解除 AppArmor 对其的限制
-print_step 7 "Configuring unprivileged user namespaces"
+print_step 8 "Configuring unprivileged user namespaces"
 apply_sysctl kernel.unprivileged_userns_clone 1 /etc/sysctl.d/99-userns.conf
 apply_sysctl kernel.apparmor_restrict_unprivileged_userns 0 /etc/sysctl.d/99-apparmor-userns.conf
 
-print_step 8 "Checking installed extras"
+print_step 9 "Checking installed extras"
 printf '  %-24s %s\n' "bubblewrap" "$(check_pkg bubblewrap)"
 printf '  %-24s %s\n' "flatpak" "$(check_pkg flatpak)"
 printf '  %-24s %s\n' "curl" "$(check_pkg curl)"
