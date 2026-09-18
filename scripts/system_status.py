@@ -155,7 +155,7 @@ def main() -> None:
     输出一行 CPU 与 GPU 状态供顶栏显示
 
     CPU 占用率采样等待 0.2 秒，封装功耗复用同一等待窗口
-    各组依次显示占用率、温度、内存或显存占用率、功耗
+    各组依次显示占用率、温度、功耗，末尾标注 RAM 或 VRAM 占用率
     """
     energy = cpu_energy_sample()
     cpu = psutil.cpu_percent(interval=0.2)
@@ -165,9 +165,9 @@ def main() -> None:
     gpu, gpu_temperature, gpu_memory, gpu_power = gpu_status()
     print(
         f"CPU {format_value(cpu, '%')} {format_value(temperature, '°C')} "
-        f"{format_value(memory, '%')} {format_value(power, 'W')}  GPU {format_value(gpu, '%')} "
-        f"{format_value(gpu_temperature, '°C')} {format_value(gpu_memory, '%')} "
-        f"{format_value(gpu_power, 'W')}"
+        f"{format_value(power, 'W')} · RAM {format_value(memory, '%')} │ "
+        f"GPU {format_value(gpu, '%')} {format_value(gpu_temperature, '°C')} "
+        f"{format_value(gpu_power, 'W')} · VRAM {format_value(gpu_memory, '%')}"
     )
 
 
