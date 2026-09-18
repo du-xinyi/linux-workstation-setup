@@ -165,7 +165,7 @@ def main() -> None:
     gpu, gpu_temperature, gpu_memory, gpu_power = gpu_status()
     print(
         f"CPU {format_value(cpu, '%')} {format_value(temperature, '°C')} "
-        f"{format_value(memory, '%')} {format_value(power, 'W')} | GPU {format_value(gpu, '%')} "
+        f"{format_value(memory, '%')} {format_value(power, 'W')}  GPU {format_value(gpu, '%')} "
         f"{format_value(gpu_temperature, '°C')} {format_value(gpu_memory, '%')} "
         f"{format_value(gpu_power, 'W')}"
     )
