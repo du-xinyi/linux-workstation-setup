@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
+# 安装 Zsh、Oh My Zsh 与插件，验证新配置后替换当前用户的 .zshrc。
+# 此脚本生成整份配置，应在其他组件追加 Shell 配置之前运行。
+
 set -Eeuo pipefail
 
 zshrc_tmp=""
+# 无论成功或失败都清理尚未替换为正式配置的临时文件。
 cleanup() {
     if [ -n "$zshrc_tmp" ] && [ -e "$zshrc_tmp" ]; then
         rm -f "$zshrc_tmp"
@@ -11,7 +15,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -72,7 +76,7 @@ zshrc_tmp="$(mktemp "${ZSHRC}.tmp.XXXXXX")"
 # 使用安装时的实际 Oh My Zsh 路径，避免自定义 ZSH_DIR 时配置仍指向默认目录。
 printf 'export ZSH=%q\n' "$ZSH_DIR" > "$zshrc_tmp"
 cat >> "$zshrc_tmp" <<'EOF_ZSHRC'
-# 由 linux-workstation-setup/scripts/install-zsh.sh 自动生成
+# 由 linux-workstation-setup/scripts/installers/install-zsh.sh 自动生成
 
 ZSH_THEME="ys"
 

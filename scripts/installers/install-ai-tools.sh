@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+# 安装 AI 命令行工具并配置 MCP、Codex；依赖已准备好的 Node.js/npm 环境。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
@@ -44,6 +46,7 @@ readonly CODEX_SUBAGENT_MODEL="${CODEX_SUBAGENT_MODEL:-gpt-5.6-terra}"
 readonly CODEX_SUBAGENT_REASONING="${CODEX_SUBAGENT_REASONING:-medium}"
 readonly CODEX_AGENTS_INTERRUPT_MESSAGE="${CODEX_AGENTS_INTERRUPT_MESSAGE:-enabled}"
 
+# 读取合并后的 OpenCode 配置，仅注册尚不存在的 MCP 服务。
 configure_opencode_mcp() {
     local config_json
 
@@ -67,6 +70,7 @@ configure_opencode_mcp() {
     fi
 }
 
+# 只查首个 TOML 表之前的键，避免把子表中的同名字段误判为顶层配置。
 codex_top_level_has_key() {
     local path="$1"
     local key="$2"
@@ -78,6 +82,7 @@ codex_top_level_has_key() {
     ' "$path"
 }
 
+# 拒绝无法直接嵌入双引号 TOML 字符串的字符，防止写出无效配置。
 validate_codex_config_value() {
     local key="$1"
     local value="$2"
@@ -88,6 +93,7 @@ validate_codex_config_value() {
     fi
 }
 
+# 从首个参数读取配置，将更新后的顶层字段写入第二个参数指定的文件。
 update_codex_top_level_config() {
     local path="$1"
     local out="$2"
@@ -146,6 +152,7 @@ update_codex_top_level_config() {
     ' "$path" >"$out"
 }
 
+# 更新 agents 表；布尔值由调用方完成校验并以 TOML 字面量传入。
 update_codex_agents_config() {
     local path="$1"
     local out="$2"
@@ -233,6 +240,7 @@ update_codex_agents_config() {
     ' "$path" >"$out"
 }
 
+# 校验环境变量并更新用户配置；配置位置遵循 CODEX_HOME。
 configure_codex_base() {
     local codex_cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
     local pair
@@ -382,7 +390,7 @@ echo "======================================"
 echo " Ubuntu/Debian AI CLI Tools Installer (Codex / OpenCode / ast-grep)"
 echo "======================================"
 
-require_non_root "./scripts/install-ai-tools.sh"
+require_non_root "./scripts/installers/install-ai-tools.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 

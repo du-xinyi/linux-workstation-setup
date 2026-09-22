@@ -1,33 +1,44 @@
 # Linux Workstation Setup
 
-目录按职责分为两类：
+目录按安装流程、运行时辅助程序和公共函数划分：
 
 ```text
 .
 ├── setup.sh                       # 统一入口
 ├── scripts/                       # 自定义安装与配置脚本
-│   ├── install-fcitx5-rime.sh
-│   ├── install-fonts.sh
-│   ├── install-git.sh
-│   ├── install-python-tools.sh
-│   ├── install-mirrors.sh
-│   ├── install-nodejs.sh
-│   ├── install-ai-tools.sh
-│   ├── install-ruby.sh
-│   ├── install-cpp.sh
-│   ├── install-python.sh
-│   ├── install-extras.sh
-│   ├── install-zsh.sh
-│   ├── install-rust.sh
-│   ├── system_status.py           # indicator-sysmonitor 自定义状态采集
+│   ├── installers/               # 各组件安装入口
+│   │   ├── install-ai-tools.sh
+│   │   ├── install-cpp.sh
+│   │   ├── install-extras.sh
+│   │   ├── install-fcitx5-rime.sh
+│   │   ├── install-fonts.sh
+│   │   ├── install-git.sh
+│   │   ├── install-mirrors.sh
+│   │   ├── install-nodejs.sh
+│   │   ├── install-python.sh
+│   │   ├── install-python-tools.sh
+│   │   ├── install-ruby.sh
+│   │   ├── install-rust.sh
+│   │   └── install-zsh.sh
+│   ├── helpers/                  # 安装后运行的辅助程序
+│   │   └── system_status.py      # indicator-sysmonitor 自定义状态采集
 │   └── lib/
-│       └── common.sh              # 安装脚本公共函数
+│       ├── common.sh              # 公共函数统一加载入口
+│       ├── runtime.sh             # 进度输出与运行环境检查
+│       ├── apt.sh                 # APT 包索引更新
+│       └── shell.sh               # Shell 名称与配置文件选择
 └── vendor/                        # 本地上游安装器目录
     ├── README.md
     └── download-installers.sh     # 下载上游安装器
 ```
 
 ## 使用
+
+安装脚本通过 `. "$ROOT_DIR/scripts/lib/common.sh"` 加载公共函数。
+`common.sh` 按顺序加载运行环境、APT 和 Shell 模块；APT 模块依赖运行环境模块的
+`print_step`。公共库不主动修改 Shell 选项或 trap，`SETUP_STEP_TOTAL` 由调用方设置。
+安装入口统一使用 `./setup.sh <组件>`；直接调用时，原 `scripts/install-*.sh` 路径改为
+`scripts/installers/install-*.sh`，组件名和别名保持不变。
 
 查看组件：
 
@@ -107,7 +118,7 @@ Mirrors 脚本将 apt、pip 与 conda 的软件源切换到国内镜像，默认
 
 Git 脚本通过系统 apt 源安装 `git`、`ca-certificates` 和 `openssh-client`，支持 HTTPS
 与 SSH 访问远程仓库，安装后输出 Git 版本。可单独运行 `./setup.sh git` 或
-`./scripts/install-git.sh`；全量安装时在 Mirrors 之后运行。
+`./scripts/installers/install-git.sh`；全量安装时在 Mirrors 之后运行。
 脚本会将当前用户的全局 `credential.helper` 设置为 `store`，替换已有的全局凭据助手配置。
 使用 HTTPS 仓库地址时，首次认证输入用户名和访问令牌（Token），认证成功后 Git 会保存凭据，
 后续自动复用。凭据以明文保存，通常位于 `~/.git-credentials`，请勿提交或共享该文件；
@@ -159,6 +170,10 @@ Extras 脚本安装常用拓展程序：
 
 - **bubblewrap** — 非特权容器运行时，为 Flatpak 提供沙箱隔离，并配置内核 user namespaces 及 AppArmor 豁免
 - **Hardinfo2** — 系统硬件信息与基准测试工具（apt）
+- **Tabby** — 多标签 SSH、串口终端与 SFTP 客户端；从
+  [官方 Release](https://github.com/Eugeny/tabby/releases/tag/v1.0.235) 下载 DEB 后由 APT 安装依赖。
+  默认版本为 `1.0.235`，支持 amd64、arm64、armhf，可通过 `TABBY_VERSION` 指定其他版本
+  （例如 `TABBY_VERSION=1.0.235 ./setup.sh extras`）。不添加 Tabby 软件源，后续升级需指定新版本重跑。
 - **System Monitor** — GNOME 系统资源监控器（apt）
 - **indicator-sysmonitor** — 顶栏显示 CPU/内存/网络等指标的指示器（`ppa:fossfreedom/indicator-sysmonitor`）
 - **ubuntu-restricted-extras** — 多媒体编解码器、微软字体等受限组件（apt，预接受 EULA）
@@ -176,7 +191,7 @@ Extras 脚本安装常用拓展程序：
 - **Pinta** — 轻量图像编辑器（Flatpak）
 - **Mission Center / Loupe** — 现代系统资源监控器与图片查看器（Flatpak）
 
-Extras 会将 `scripts/system_status.py` 安装到
+Extras 会将 `scripts/helpers/system_status.py` 安装到
 `~/.local/lib/indicator-sysmonitor/system_status.py`，并配置 indicator-sysmonitor
 每 3 秒显示一行：`CPU 3% 35°C 35% 25W | GPU 7% 56°C 14% 80W`。
 CPU 组依次为占用率、温度、内存占用率、封装功耗；GPU 组依次为占用率、温度、显存占用率、功耗。
@@ -230,7 +245,7 @@ CPP_TARGETS="amd64 arm64" ./setup.sh cpp
 ```
 
 Python 脚本通过 APT 安装系统 Python 与常用开发包，可运行 `./setup.sh python` 或
-`./scripts/install-python.sh`。`all` 模式会包含此组件，可用 `--skip python` 跳过。
+`./scripts/installers/install-python.sh`。`all` 模式会包含此组件，可用 `--skip python` 跳过。
 
 - **基础工具**：`python3`、`python3-pip`、`python3-venv`、`python3-dev`、
   `python3-setuptools`、`python3-wheel`。
@@ -275,7 +290,8 @@ ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。�
 
 - `vendor/` 用于保存上游发布的原始安装器。安装器文件不提交到 Git 仓库，
   通过 `vendor/download-installers.sh` 下载。
-- `scripts/` 保存环境检查、默认配置和对官方安装器的封装。
-- `scripts/lib/common.sh` 保存跨安装器复用的通用函数，例如系统检查、sudo
-  检查、步骤输出和 Shell 配置文件选择。
+- `scripts/installers/` 保存各组件的安装流程、默认配置和对官方安装器的封装。
+- `scripts/helpers/` 保存安装后运行的辅助程序。
+- `scripts/lib/` 保存系统检查、步骤输出、APT 更新和 Shell 配置选择等公共函数，
+  通过 `common.sh` 统一加载。
 - 新增组件时，同时更新 `setup.sh` 的命令分派和本文件的目录说明。

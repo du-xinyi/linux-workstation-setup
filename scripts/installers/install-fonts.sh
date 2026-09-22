@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+# 通过 APT 安装字体集合，刷新 fontconfig 缓存并检查代表性字体。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -13,6 +15,7 @@ readonly SETUP_STEP_TOTAL=4
 # 可通过 FONT_PACKAGES 覆盖默认字体包列表，包名之间使用空格分隔
 readonly FONT_PACKAGES="${FONT_PACKAGES:-fontconfig fonts-dejavu-core fonts-liberation2 fonts-firacode fonts-jetbrains-mono fonts-cascadia-code fonts-noto-core fonts-noto-extra fonts-noto-mono fonts-noto-cjk fonts-noto-color-emoji fonts-crosextra-carlito fonts-crosextra-caladea fonts-lmodern fonts-stix}"
 
+# 根据字体家族查询已注册字体，用于安装完成后的可读检查输出。
 check_font() {
     local label="$1"
     local pattern="$2"
@@ -28,7 +31,7 @@ echo "======================================"
 echo " Ubuntu/Debian Common Fonts Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-fonts.sh"
+require_non_root "./scripts/installers/install-fonts.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 

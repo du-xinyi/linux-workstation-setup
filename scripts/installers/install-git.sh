@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
+# 安装 Git 与 HTTPS/SSH 依赖，并设置当前用户的凭据持久化方式。
+# credential.helper=store 会明文保存首次认证后提供的凭据。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -14,7 +17,7 @@ echo "======================================"
 echo " Git Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-git.sh"
+require_non_root "./scripts/installers/install-git.sh"
 require_debian_like
 require_sudo
 

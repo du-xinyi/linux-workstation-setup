@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+# 安装由发行版管理的系统 Python 工具与常用库，不向 Conda 或 venv 安装包。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -42,7 +44,7 @@ echo "======================================"
 echo " System Python Development Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-python.sh"
+require_non_root "./scripts/installers/install-python.sh"
 require_debian_like
 require_sudo
 
@@ -52,6 +54,7 @@ print_step 2 "Installing system Python tools and libraries"
 sudo apt-get install -y "${PYTHON_PKGS[@]}"
 
 print_step 3 "Checking installed Python packages"
+# 精确检查 installed 状态；仅有残留配置文件的包不算安装成功。
 missing=0
 for pkg in "${PYTHON_PKGS[@]}"; do
     if status="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null)" &&

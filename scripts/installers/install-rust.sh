@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
+# 使用 rustup 管理用户级 Rust；已有安装更新 stable，否则调用官方安装器。
+# 无参数时安装 minimal 配置；显式参数传给首次安装的 rustup 安装器。
+
 set -Eeuo pipefail
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 

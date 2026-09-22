@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+# 统一配置 APT、pip 与 Conda 镜像；APT 修改系统文件，后两者写入用户目录。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -96,6 +98,7 @@ collect_apt_source_files() {
     done
 }
 
+# 原地替换已存在源文件中的官方地址，不新增发行版或仓库组件。
 configure_apt() {
     local f
     local domain
@@ -115,6 +118,7 @@ configure_apt() {
 
 }
 
+# 重写用户 pip.conf 为本脚本管理的镜像配置，无需预先安装 pip。
 configure_pip() {
     local pip_conf_dir="$HOME/.config/pip"
     local pip_conf="$pip_conf_dir/pip.conf"
@@ -132,6 +136,7 @@ configure_pip() {
     fi
 }
 
+# 重写用户 .condarc；即使 Conda 尚未安装，后续安装也可读取此配置。
 configure_conda() {
     local condarc="$HOME/.condarc"
 
@@ -163,7 +168,7 @@ echo "======================================"
 echo " Mirror Source Installer (apt / pip / conda)"
 echo "======================================"
 
-require_non_root "./scripts/install-mirrors.sh"
+require_non_root "./scripts/installers/install-mirrors.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 

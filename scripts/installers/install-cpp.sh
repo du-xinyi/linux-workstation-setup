@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
+# 安装本机 C/C++ 开发库、Linux 交叉编译器和可选裸机工具链。
+# 常用第三方库只安装本机版本；末尾交叉测试不会运行其他架构的程序。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -108,7 +111,7 @@ echo "======================================"
 echo " C/C++ Build Environment Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-cpp.sh"
+require_non_root "./scripts/installers/install-cpp.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 

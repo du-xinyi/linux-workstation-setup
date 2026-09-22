@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
+# 安装 Miniconda 与独立的 uv/uvx，配置当前用户的 Shell 并验证命令版本。
+# 脚本参数传给 Miniconda 安装器；uv 安装目录使用 UV_INSTALL_DIR 配置。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -14,6 +17,7 @@ readonly UV_BIN_DIR="${UV_INSTALL_DIR:-$HOME/.local/bin}"
 install_prefix="${HOME:-/opt}/miniconda3"
 installer_args=("$@")
 
+# 仅对子进程清除 PYTHONPATH，避免外部 Python 模块路径干扰 Conda。
 run_without_pythonpath() {
     env -u PYTHONPATH "$@"
 }
@@ -41,7 +45,7 @@ install_uv() (
         sh "$local_tmp/install-uv.sh"
 )
 
-require_non_root "./scripts/install-python-tools.sh"
+require_non_root "./scripts/installers/install-python-tools.sh"
 case "$UV_BIN_DIR" in
     /*) ;;
     *) echo "UV_INSTALL_DIR must be an absolute path." >&2; exit 1 ;;
@@ -112,6 +116,7 @@ fi
 print_step 3 "Installing uv"
 install_uv
 
+# 转义含空格的安装路径，并避免重复追加相同的 PATH 配置。
 printf -v uv_path_line 'export PATH=%q:"$PATH"' "$UV_BIN_DIR"
 touch "$shell_rc"
 if ! grep -Fqx "$uv_path_line" "$shell_rc"; then

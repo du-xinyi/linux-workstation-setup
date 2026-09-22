@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 
+# 安装桌面辅助应用并配置状态监控；包含 PPA、Flatpak 和系统内核参数修改。
+# 当前包列表及 PPA 面向 Ubuntu，需在桌面用户身份下运行。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=9
+readonly SETUP_STEP_TOTAL=10
+# 固定默认版本以便重复安装；可通过环境变量选择其他官方发布版本。
+readonly TABBY_VERSION="${TABBY_VERSION:-1.0.235}"
 
 # 通过 dpkg 查询 apt 包安装状态，用于安装后的验证
 check_pkg() { dpkg -s "$1" >/dev/null 2>&1 && echo "installed" || echo "MISSING"; }
@@ -19,7 +24,7 @@ check_fp() { flatpak info "$1" >/dev/null 2>&1 && echo "installed" || echo "MISS
 # 使用自定义传感器显示完整一行，保留其他传感器并开启登录自启。
 configure_sysmonitor() {
     local status_script="$HOME/.local/lib/indicator-sysmonitor/system_status.py"
-    install -Dm755 "$ROOT_DIR/scripts/system_status.py" "$status_script"
+    install -Dm755 "$ROOT_DIR/scripts/helpers/system_status.py" "$status_script"
     /usr/bin/python3 - "$status_script" <<'PY'
 import json
 from pathlib import Path
@@ -77,6 +82,36 @@ install_hardinfo2() (
     sudo apt-get install -y "$deb"
 )
 
+# 从官方 Release 下载对应架构的 DEB，由 APT 安装依赖；退出时清理下载文件。
+install_tabby() (
+    if [[ ! "$TABBY_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "TABBY_VERSION must be a version number such as 1.0.235." >&2
+        exit 1
+    fi
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+        amd64) asset_arch=x64 ;;
+        arm64) asset_arch=arm64 ;;
+        armhf) asset_arch=armv7l ;;
+        *) echo "No Tabby DEB configured for architecture: $arch" >&2; exit 1 ;;
+    esac
+
+    tmpdir="$(mktemp -d /tmp/tabby.XXXXXX)"
+    trap 'rm -rf -- "$tmpdir"' EXIT
+    deb="$tmpdir/tabby.deb"
+    url="https://github.com/Eugeny/tabby/releases/download/v${TABBY_VERSION}/tabby-${TABBY_VERSION}-linux-${asset_arch}.deb"
+    curl -fL --retry 3 --connect-timeout 15 --max-time 600 -o "$deb" "$url"
+    if [ "$(dpkg-deb -f "$deb" Package)" != "tabby-terminal" ] ||
+       [ "$(dpkg-deb -f "$deb" Architecture)" != "$arch" ]; then
+        echo "Downloaded Tabby package has an unexpected name or architecture." >&2
+        exit 1
+    fi
+    # APT 的 _apt 用户需要读取临时目录内的安装包。
+    chmod 755 "$tmpdir"
+    chmod 644 "$deb"
+    sudo apt-get install -y "$deb"
+)
+
 # 内核不支持该参数或当前值已是目标值时跳过；仅在需要变更时写入持久配置并立即应用
 apply_sysctl() {
     local key="$1"
@@ -100,7 +135,7 @@ echo "======================================"
 echo " Extras Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-extras.sh"
+require_non_root "./scripts/installers/install-extras.sh"
 require_debian_like
 require_sudo
 
@@ -149,25 +184,29 @@ configure_sysmonitor
 print_step 6 "Installing Hardinfo2"
 install_hardinfo2
 
+print_step 7 "Installing Tabby"
+install_tabby
+
 # 使用 Flatpak 安装桌面应用，获取独立运行环境或更新版本
-print_step 7 "Installing Mission Center, Loupe, and Pinta"
+print_step 8 "Installing Mission Center, Loupe, and Pinta"
 flatpak install -y flathub \
     io.missioncenter.MissionCenter \
     org.gnome.Loupe \
     com.github.PintaProject.Pinta
 
 # bubblewrap 和 Flatpak 依赖非特权用户命名空间，需启用并解除 AppArmor 对其的限制
-print_step 8 "Configuring unprivileged user namespaces"
+print_step 9 "Configuring unprivileged user namespaces"
 apply_sysctl kernel.unprivileged_userns_clone 1 /etc/sysctl.d/99-userns.conf
 apply_sysctl kernel.apparmor_restrict_unprivileged_userns 0 /etc/sysctl.d/99-apparmor-userns.conf
 
-print_step 9 "Checking installed extras"
+print_step 10 "Checking installed extras"
 printf '  %-24s %s\n' "bubblewrap" "$(check_pkg bubblewrap)"
 printf '  %-24s %s\n' "flatpak" "$(check_pkg flatpak)"
 printf '  %-24s %s\n' "curl" "$(check_pkg curl)"
 printf '  %-24s %s\n' "wget" "$(check_pkg wget)"
 printf '  %-24s %s\n' "net-tools" "$(check_pkg net-tools)"
 printf '  %-24s %s\n' "Hardinfo2" "$(check_pkg hardinfo2)"
+printf '  %-24s %s\n' "Tabby" "$(check_pkg tabby-terminal)"
 printf '  %-24s %s\n' "lm-sensors" "$(check_pkg lm-sensors)"
 printf '  %-24s %s\n' "nvme-cli" "$(check_pkg nvme-cli)"
 printf '  %-24s %s\n' "smartmontools" "$(check_pkg smartmontools)"

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
+# 安装 Fcitx 5/Rime 与雾凇拼音，写入用户配置并设置桌面登录自启。
+# 重复执行会重新应用脚本管理的快捷键和 Rime patch。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
@@ -85,7 +88,7 @@ echo "======================================"
 echo " Fcitx 5 + Rime Ice Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-fcitx5-rime.sh"
+require_non_root "./scripts/installers/install-fcitx5-rime.sh"
 require_debian_like
 require_sudo
 

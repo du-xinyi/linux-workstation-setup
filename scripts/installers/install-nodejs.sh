@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
+# 通过 NodeSource 安装 Node.js，将 npm 全局包放在用户目录，并安装前端工具与 gh。
+# 会写入系统 APT 源及当前用户的 npm/Shell 配置。
+
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
@@ -27,7 +30,7 @@ echo "======================================"
 echo " Ubuntu/Debian Node.js + npm Development Environment Installer"
 echo "======================================"
 
-require_non_root "./scripts/install-nodejs.sh"
+require_non_root "./scripts/installers/install-nodejs.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 

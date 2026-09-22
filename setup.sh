@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 
+# 工作站安装统一入口：单独运行组件，或按依赖顺序执行全部组件。
+# 组件后的参数透传给安装器；all 模式负责跳过列表、索引更新和失败汇总。
+
 set -Eeuo pipefail
 
 readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
+# 输出入口用法，不执行安装或环境检查。
 usage() {
     cat <<'EOF'
 Usage:
@@ -52,10 +56,12 @@ Examples:
 EOF
 }
 
+# 每行输出一个标准组件名，便于终端查看和脚本读取。
 list_components() {
     printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools extras fcitx5-rime
 }
 
+# 将跳过列表中的别名转为标准名；未知名称返回非零状态。
 normalize_component() {
     case "$1" in
         mirrors|apt-mirror|mirror)
@@ -79,6 +85,7 @@ normalize_component() {
     esac
 }
 
+# 标记需要提前刷新 APT 索引的组件；换源组件另行处理。
 component_requires_apt() {
     case "$1" in
         git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|python|extras) return 0 ;;
@@ -86,6 +93,7 @@ component_requires_apt() {
     esac
 }
 
+# 查询已归一化的跳过列表，不修改安装顺序。
 is_skipped_component() {
     local component="$1"
     local skipped
@@ -99,6 +107,7 @@ is_skipped_component() {
     return 1
 }
 
+# 解析逗号分隔的 --skip 参数；空值或未知组件视为用法错误。
 add_skip_components() {
     local raw="$1"
     local requested
@@ -126,6 +135,7 @@ add_skip_components() {
     done
 }
 
+# all 模式共用一次索引更新；若将执行 mirrors，则交给它在换源后更新。
 update_package_indexes_once() {
     local component
 
@@ -150,49 +160,50 @@ update_package_indexes_once() {
     done
 }
 
+# 以独立进程执行安装器，保留参数边界并向调用方传递退出状态。
 run_component() {
     local component="$1"
     shift
 
     case "$component" in
         mirrors)
-            "$ROOT_DIR/scripts/install-mirrors.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-mirrors.sh" "$@"
             ;;
         git)
-            "$ROOT_DIR/scripts/install-git.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-git.sh" "$@"
             ;;
         npm)
-            "$ROOT_DIR/scripts/install-nodejs.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-nodejs.sh" "$@"
             ;;
         ai-tools)
-            "$ROOT_DIR/scripts/install-ai-tools.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-ai-tools.sh" "$@"
             ;;
         fcitx5-rime|rime)
-            "$ROOT_DIR/scripts/install-fcitx5-rime.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-fcitx5-rime.sh" "$@"
             ;;
         fonts)
-            "$ROOT_DIR/scripts/install-fonts.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-fonts.sh" "$@"
             ;;
         zsh)
-            "$ROOT_DIR/scripts/install-zsh.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-zsh.sh" "$@"
             ;;
         ruby)
-            "$ROOT_DIR/scripts/install-ruby.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-ruby.sh" "$@"
             ;;
         rust)
-            "$ROOT_DIR/scripts/install-rust.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-rust.sh" "$@"
             ;;
         cpp)
-            "$ROOT_DIR/scripts/install-cpp.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-cpp.sh" "$@"
             ;;
         python)
-            "$ROOT_DIR/scripts/install-python.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-python.sh" "$@"
             ;;
         python-tools|miniconda|conda)
-            "$ROOT_DIR/scripts/install-python-tools.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-python-tools.sh" "$@"
             ;;
         extras)
-            "$ROOT_DIR/scripts/install-extras.sh" "$@"
+            "$ROOT_DIR/scripts/installers/install-extras.sh" "$@"
             ;;
         *)
             printf 'Unknown component: %s\n\n' "$component" >&2
@@ -202,6 +213,7 @@ run_component() {
     esac
 }
 
+# 默认遇错停止；继续模式会收集失败组件，最终仍返回失败状态。
 run_all() {
     local continue_on_error="${1:-false}"
     local component
