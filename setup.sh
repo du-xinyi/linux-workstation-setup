@@ -12,7 +12,7 @@ Usage:
   ./setup.sh
   ./setup.sh all
   ./setup.sh all --continue-on-error
-  ./setup.sh all --skip rust,miniconda
+  ./setup.sh all --skip rust,python-tools
   ./setup.sh <component> [installer arguments...]
 
 Components:
@@ -27,7 +27,8 @@ Components:
   ruby            Install Ruby using rbenv and ruby-build
   rust            Install Rust using the official rustup installer
   cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal + common libs
-  miniconda       Install Miniconda using the official installer
+  python          Install system Python tools and common libraries using apt
+  python-tools    Install Miniconda and uv (aliases: miniconda, conda)
   extras          Install extra applications
   list            List available components
   help            Show this help
@@ -36,7 +37,7 @@ Examples:
   ./setup.sh
   ./setup.sh all
   ./setup.sh all --continue-on-error
-  ./setup.sh all --skip rust,miniconda
+  ./setup.sh all --skip rust,python-tools
   ./setup.sh npm
   ./setup.sh git
   ./setup.sh ai-tools
@@ -44,14 +45,15 @@ Examples:
   ./setup.sh ruby
   ./setup.sh rust
   ./setup.sh cpp
-  ./setup.sh miniconda
+  ./setup.sh python
+  ./setup.sh python-tools
   ./setup.sh extras
   MIRROR_PROVIDER=aliyun ./setup.sh mirrors
 EOF
 }
 
 list_components() {
-    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp miniconda extras fcitx5-rime
+    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools extras fcitx5-rime
 }
 
 normalize_component() {
@@ -62,14 +64,14 @@ normalize_component() {
         cpp|cxx|c++)
             printf '%s\n' cpp
             ;;
-        git|npm|ai-tools|fonts|zsh|ruby|rust|miniconda|extras|fcitx5-rime)
+        git|npm|ai-tools|fonts|zsh|ruby|rust|python|python-tools|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
         rime)
             printf '%s\n' fcitx5-rime
             ;;
-        conda)
-            printf '%s\n' miniconda
+        miniconda|conda)
+            printf '%s\n' python-tools
             ;;
         *)
             return 1
@@ -79,7 +81,7 @@ normalize_component() {
 
 component_requires_apt() {
     case "$1" in
-        git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|extras) return 0 ;;
+        git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|python|extras) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -183,8 +185,11 @@ run_component() {
         cpp)
             "$ROOT_DIR/scripts/install-cpp.sh" "$@"
             ;;
-        miniconda|conda)
-            "$ROOT_DIR/scripts/install-miniconda.sh" "$@"
+        python)
+            "$ROOT_DIR/scripts/install-python.sh" "$@"
+            ;;
+        python-tools|miniconda|conda)
+            "$ROOT_DIR/scripts/install-python-tools.sh" "$@"
             ;;
         extras)
             "$ROOT_DIR/scripts/install-extras.sh" "$@"
@@ -242,7 +247,8 @@ readonly ALL_COMPONENTS=(
     rust
     ruby
     cpp
-    miniconda
+    python
+    python-tools
     extras
     fcitx5-rime
 )

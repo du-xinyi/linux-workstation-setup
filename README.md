@@ -9,12 +9,13 @@
 │   ├── install-fcitx5-rime.sh
 │   ├── install-fonts.sh
 │   ├── install-git.sh
-│   ├── install-miniconda.sh
+│   ├── install-python-tools.sh
 │   ├── install-mirrors.sh
 │   ├── install-nodejs.sh
 │   ├── install-ai-tools.sh
 │   ├── install-ruby.sh
 │   ├── install-cpp.sh
+│   ├── install-python.sh
 │   ├── install-extras.sh
 │   ├── install-zsh.sh
 │   ├── install-rust.sh
@@ -51,7 +52,7 @@
 安装全部组件，但跳过指定组件：
 
 ```bash
-./setup.sh all --skip ruby,miniconda
+./setup.sh all --skip ruby,python-tools
 ```
 
 安装组件：
@@ -66,7 +67,8 @@
 ./setup.sh ruby
 ./setup.sh rust
 ./setup.sh cpp
-./setup.sh miniconda
+./setup.sh python
+./setup.sh python-tools
 ./setup.sh extras
 ```
 
@@ -81,9 +83,9 @@ Rime 自身的 Shift 中英文切换设置不变；输入法分组与其他行�
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
-Mirrors、Git、Fonts、Zsh、Node.js/npm、AI Tools、Rust、Ruby、C/C++、Miniconda、Extras、Fcitx 5 Rime。Mirrors
+Mirrors、Git、Fonts、Zsh、Node.js/npm、AI Tools、Rust、Ruby、C/C++、Python、Python Tools（Miniconda/uv）、Extras、Fcitx 5 Rime。Mirrors
 排在最前，使后续组件的包下载直接走国内镜像；由于 Zsh 脚本会生成 `~/.zshrc`，它会在
-Node.js、Rust、Ruby、C/C++ 和 Miniconda 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
+Node.js、Rust、Ruby、C/C++ 和 Python Tools 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
 Ruby 之前安装，Ruby 构建时会优先加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次
 `apt-get update`，然后让各组件跳过自己的重复包索引更新；当 Mirrors 未被 `--skip` 跳过时，
 这次预更新会交给 Mirrors 组件（它先换源再刷新索引，避免用官方源做无谓的首次更新）；
@@ -122,16 +124,29 @@ Zsh 脚本安装 Oh My Zsh 和语法高亮插件，并生成基础 Shell 与历�
 `conda` 提供 Tab 补全（子命令、环境名、包名）。该插件在 `conda init` 注册的
 `conda` 函数上同样生效；conda 未安装时仅在按 Tab 时返回空，不影响 Shell 启动。
 
-Miniconda 封装脚本会在安装成功后设置 `auto_activate: false`，避免启动
+`install-python-tools.sh` 安装 Miniconda 和 uv，统一入口为 `./setup.sh python-tools`。
+保留 `miniconda`、`conda` 作为组件别名，也支持在 `--skip` 中使用这些别名。
+脚本会在 Miniconda 安装成功后设置 `auto_activate: false`，避免启动
 Shell 时自动进入 base 环境，并根据当前 Shell 运行对应的 `conda init`。不传
 参数时默认以非交互方式安装到 `$HOME/miniconda3`；如果该目录已存在，则自动
 使用更新模式，便于重复运行。
-Node.js、Rust 和 Miniconda 安装脚本会分别将 npm、Cargo 和 Conda 所需配置
+该组件还安装 uv/uvx，使用 [uv 官方独立安装器](https://docs.astral.sh/uv/configuration/installer/)，
+默认安装到 `$HOME/.local/bin`，通过 `UV_INSTALL_DIR` 可指定其他绝对路径。
+目标目录已有可执行的 `uv` 和 `uvx` 时复用，否则重新下载安装；下载需要 curl 或 wget。
+uv 独立于 Conda 环境，脚本会添加其命令路径，并在安装结束验证 Conda、uv 和 uvx 的版本。
+
+```bash
+./setup.sh python-tools
+# 自定义 uv 和 Miniconda 的安装目录
+UV_INSTALL_DIR="$HOME/tools/uv" ./setup.sh python-tools -b -p "$HOME/tools/miniconda3"
+```
+
+Node.js、Rust 和 Python Tools 安装脚本会分别将 npm、Cargo、Conda 和 uv 所需配置
 写入当前 Shell 的配置文件：Zsh 使用 `~/.zshrc`，Bash 使用 `~/.bashrc`，
 其他 Shell 回退到 `~/.profile`。如需修改默认目录，仍可向官方安装器传入
 `-p` 参数。
 
-Rust 和 Miniconda 组件依赖 `vendor/` 中的上游安装器。安装器不存在时，对应
+Rust 和 Python Tools 组件依赖 `vendor/` 中的上游安装器。安装器不存在时，对应
 组件会自动从官方地址下载。也可以提前手动下载：
 
 ```bash
@@ -213,6 +228,22 @@ dpkg 架构名，支持 `amd64`/`arm64`/`armhf`/`riscv64`）。例如仅装 arm6
 ```bash
 CPP_TARGETS="amd64 arm64" ./setup.sh cpp
 ```
+
+Python 脚本通过 APT 安装系统 Python 与常用开发包，可运行 `./setup.sh python` 或
+`./scripts/install-python.sh`。`all` 模式会包含此组件，可用 `--skip python` 跳过。
+
+- **基础工具**：`python3`、`python3-pip`、`python3-venv`、`python3-dev`、
+  `python3-setuptools`、`python3-wheel`。
+- **网络与解析**：`python3-requests`、`python3-aiohttp`、`python3-yaml`、`python3-bs4`、`python3-lxml`。
+- **数据与图像**：`python3-numpy`、`python3-scipy`、`python3-pandas`、`python3-matplotlib`、
+  `python3-pil`（Pillow）、`python3-openpyxl`。
+- **命令行与系统信息**：`python3-tqdm`、`python3-rich`、`python3-click`、`python3-psutil`。
+- **测试与交互**：`python3-pytest`、`python3-pytest-cov`、`python3-ipython`。
+
+包版本由当前 Debian/Ubuntu 软件源决定，Ubuntu 需启用 `universe`。
+安装结束会检查所有包的安装状态，并输出 `/usr/bin/python3` 的版本；检查失败时返回非零退出码。
+这些包供系统 Python 使用，Conda 和普通 venv 默认不会继承。需要在 venv 中使用系统包时，
+可运行 `/usr/bin/python3 -m venv --system-site-packages .venv`。
 
 Node.js/npm 脚本会通过 NodeSource 源安装 Node.js 与 npm，并全局安装前端工具链
 （pnpm、yarn、typescript、eslint、prettier），同时通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。
