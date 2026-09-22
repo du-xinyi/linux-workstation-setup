@@ -45,12 +45,16 @@ readonly -a DEBUG_PKGS=(
     cppcheck
 )
 
-# 本机常用开发库(仅服务本机开发;交叉开发建议用 vcpkg/conan)
+# 本机常用开发库
 readonly -a COMMON_LIBS_PKGS=(
+    libboost-all-dev
     zlib1g-dev
+    liblz4-dev
+    libzstd-dev
     libssl-dev
     libcurl4-openssl-dev
     nlohmann-json3-dev
+    libyaml-cpp-dev
     libfmt-dev
     libspdlog-dev
     libsqlite3-dev
@@ -58,6 +62,7 @@ readonly -a COMMON_LIBS_PKGS=(
     libgtest-dev
     libgmock-dev
     catch2
+    libbenchmark-dev
     libxml2-dev
 )
 
@@ -113,12 +118,12 @@ read -r -a targets <<<"$CPP_TARGETS_RAW"
 # 为非本机目标架构构建 Linux 交叉工具链包列表
 cross_pkgs=()
 for t in "${targets[@]}"; do
-    [ "$t" = "$host_arch" ] && continue
     if ! triplet="$(arch_to_triplet "$t")"; then
         echo "Unsupported target architecture in CPP_TARGETS: $t" >&2
         echo "Supported: amd64 arm64 armhf riscv64" >&2
         exit 1
     fi
+    [ "$t" = "$host_arch" ] && continue
     suffix="${triplet//_/-}"
     cross_pkgs+=("binutils-${suffix}" "gcc-${suffix}" "g++-${suffix}")
 done
