@@ -22,7 +22,7 @@ readonly OPENCODE_BIN="${OPENCODE_BIN:-$HOME/.opencode/bin/opencode}"
 # Codex 基础配置，可通过同名环境变量覆盖
 
 # 默认模型
-readonly CODEX_MODEL="${CODEX_MODEL:-gpt-6-astra}"
+readonly CODEX_MODEL="${CODEX_MODEL:-gpt-6.1-sol}"
 
 # 推理强度
 readonly CODEX_REASONING="${CODEX_REASONING:-medium}"
