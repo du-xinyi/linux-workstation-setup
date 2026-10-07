@@ -33,6 +33,7 @@ Components:
   cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal + common libs
   python          Install system Python tools and common libraries using apt
   python-tools    Install Miniconda and uv (aliases: miniconda, conda)
+  simulators      Install and configure simulators (currently MuJoCo; alias: mujoco)
   extras          Install extra applications
   list            List available components
   help            Show this help
@@ -51,6 +52,7 @@ Examples:
   ./setup.sh cpp
   ./setup.sh python
   ./setup.sh python-tools
+  ./setup.sh simulators
   ./setup.sh extras
   MIRROR_PROVIDER=aliyun ./setup.sh mirrors
 EOF
@@ -58,7 +60,7 @@ EOF
 
 # 每行输出一个标准组件名，便于终端查看和脚本读取。
 list_components() {
-    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools extras fcitx5-rime
+    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools simulators extras fcitx5-rime
 }
 
 # 将跳过列表中的别名转为标准名；未知名称返回非零状态。
@@ -70,7 +72,7 @@ normalize_component() {
         cpp|cxx|c++)
             printf '%s\n' cpp
             ;;
-        git|npm|ai-tools|fonts|zsh|ruby|rust|python|python-tools|extras|fcitx5-rime)
+        git|npm|ai-tools|fonts|zsh|ruby|rust|python|python-tools|simulators|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
         rime)
@@ -78,6 +80,9 @@ normalize_component() {
             ;;
         miniconda|conda)
             printf '%s\n' python-tools
+            ;;
+        mujoco)
+            printf '%s\n' simulators
             ;;
         *)
             return 1
@@ -88,7 +93,7 @@ normalize_component() {
 # 标记需要提前刷新 APT 索引的组件；换源组件另行处理。
 component_requires_apt() {
     case "$1" in
-        git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|python|extras) return 0 ;;
+        git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|python|simulators|extras) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -205,6 +210,9 @@ run_component() {
         extras)
             "$ROOT_DIR/scripts/installers/install-extras.sh" "$@"
             ;;
+        simulators|mujoco)
+            "$ROOT_DIR/scripts/installers/install-simulators.sh" "$@"
+            ;;
         *)
             printf 'Unknown component: %s\n\n' "$component" >&2
             usage >&2
@@ -261,6 +269,7 @@ readonly ALL_COMPONENTS=(
     cpp
     python
     python-tools
+    simulators
     extras
     fcitx5-rime
 )

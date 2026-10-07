@@ -19,6 +19,7 @@
 │   │   ├── install-python-tools.sh
 │   │   ├── install-ruby.sh
 │   │   ├── install-rust.sh
+│   │   ├── install-simulators.sh
 │   │   └── install-zsh.sh
 │   ├── helpers/                  # 安装后运行的辅助程序
 │   │   └── system_status.py      # indicator-sysmonitor 自定义状态采集
@@ -165,6 +166,38 @@ Rust 和 Python Tools 组件依赖 `vendor/` 中的上游安装器。安装器�
 ./vendor/download-installers.sh rust
 ./vendor/download-installers.sh miniconda
 ```
+
+仿真器由独立的 `simulators` 组件安装，目前仅包含 MuJoCo，支持 `mujoco` 别名。
+`all` 模式包含此组件，可用 `--skip simulators` 或 `--skip mujoco` 跳过。
+脚本面向 Debian/Ubuntu 的 amd64、arm64，默认安装 MuJoCo `3.15.0`。
+从 [官方 Release](https://github.com/google-deepmind/mujoco/releases) 下载对应架构的
+Linux `.tar.gz` 和 `.sha256`，校验通过后使用 sudo 安装到 `/opt/mujoco`，不创建版本子目录。
+包内包含原生 `simulate` 查看器、动态库、开发头文件及示例模型，不依赖 Python 环境。
+重复运行会重新下载、校验并更新固定安装目录内的文件。
+
+脚本通过 APT 安装下载、解压和桌面渲染依赖，直接使用官方 `simulate` 查看器，
+传入模型路径时加载指定模型；查看器需要桌面会话。
+安装末尾通过包内 `testspeed` 执行 100 次物理步进验证，不要求显示服务器。
+
+环境配置直接写入 `~/.zshrc` 的 MuJoCo 配置块，重复运行会更新该配置块。
+配置包含 `/opt/mujoco/bin` 的 `PATH` 和指向 `/opt/mujoco` 的 `MUJOCO_DIR`；
+同时移除旧版 `mujoco/env.sh` 的加载入口。
+原生程序通过自身相对路径加载引擎库。
+
+```bash
+./setup.sh simulators
+# 也可运行 ./setup.sh mujoco 或 ./scripts/installers/install-simulators.sh
+source ~/.zshrc
+simulate "$MUJOCO_DIR/model/humanoid/humanoid.xml"
+simulate /path/to/model.xml
+
+# 可覆盖版本与安装目录（目录必须为绝对路径）
+MUJOCO_VERSION=3.15.0 MUJOCO_INSTALL_ROOT=/opt/mujoco ./setup.sh simulators
+```
+
+C/C++ 项目可使用 `$MUJOCO_DIR/include` 中的头文件和 `$MUJOCO_DIR/lib` 中的动态库。
+Python 项目按需在自己的 Conda/venv 中执行 `pip install mujoco`；本脚本不创建 venv，
+也不提供 `mujoco-python` 入口。
 
 Extras 脚本安装常用拓展程序：
 
