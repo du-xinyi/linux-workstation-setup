@@ -297,7 +297,7 @@ Node.js/npm 脚本会通过 NodeSource 源安装 Node.js 与 npm，并全局安�
 （pnpm、yarn、typescript、eslint、prettier），同时通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。
 
 AI 工具由独立的 `ai-tools` 组件安装（依赖 `npm` 组件先装好）。执行顺序为：基础依赖 →
-Codex/ast-grep → Claude Code → OpenCode → MCP → Codex 配置 → CC Switch → 最终验证。
+Codex/ast-grep → Claude Code → OpenCode → MCP → Codex 配置 → CC Switch → Claude Desktop → 最终验证。
 `@openai/codex@latest` 与 `@ast-grep/cli@latest` 由 npm 全局安装
 （`@ast-grep/cli` 提供 `sg` 命令），OpenCode 由官方安装脚本
 `curl -fsSL https://opencode.ai/install | bash` 安装到 `~/.opencode/bin`，并注册两个 MCP 服务器
@@ -311,6 +311,13 @@ Claude Code 也由 `ai-tools` 组件通过[官方原生安装器](https://code.c
 脚本会将 `~/.local/bin` 加入当前进程的 PATH，并在当前登录 Shell 对应的配置文件中
 补充 PATH 配置（重复运行不会重复追加相同配置），随后检查 `claude --version`。
 运行 `./setup.sh ai-tools` 安装；完成后打开新终端，执行 `claude` 并按提示登录。
+
+`ai-tools` 还通过 [Anthropic 官方 APT 源](https://code.claude.com/docs/en/desktop-linux)
+安装 Claude Desktop（Linux 测试版），支持 Ubuntu 22.04+ / Debian 12+ 的 amd64、arm64。
+脚本下载签名密钥并校验官方指纹，再写入独立 keyring 和 `claude-desktop.list`，刷新索引后
+安装 `claude-desktop`；后续版本通过系统 APT 更新。安装后从应用菜单启动 Claude，或执行
+`claude-desktop`，再登录 Anthropic 账户。Cowork 需要硬件虚拟化和 `kvm` 组权限；如需使用，
+执行 `sudo usermod -aG kvm "$USER"`，注销后重新登录。
 
 `ai-tools` 同时安装 [CC Switch](https://github.com/farion1231/cc-switch) 桌面应用。每次运行通过
 GitHub `releases/latest` 的重定向解析最新正式版，不固定版本号。脚本按 amd64 / arm64 架构下载

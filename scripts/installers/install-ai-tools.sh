@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# 安装 AI 工具及 CC Switch 桌面应用并配置 MCP、Codex；依赖已准备好的 Node.js/npm 环境。
+# 安装 AI 工具及 Claude Desktop、CC Switch 桌面应用并配置 MCP、Codex；依赖已准备好的 Node.js/npm 环境。
 
 set -Eeuo pipefail
 
@@ -11,7 +11,7 @@ readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=9
+readonly SETUP_STEP_TOTAL=10
 
 # MCP 服务器
 # 无需鉴权的 MCP 端点
@@ -60,6 +60,34 @@ install_claude_code() {
     fi
     export PATH="$HOME/.local/bin:$PATH"
 }
+
+# 校验官方签名密钥后注册 APT 源，使 Claude Desktop 随系统包更新。
+install_claude_desktop() (
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+        amd64|arm64) ;;
+        *) echo "Claude Desktop does not support architecture: $arch" >&2; exit 1 ;;
+    esac
+
+    tmpdir="$(mktemp -d /tmp/claude-desktop.XXXXXX)"
+    trap 'rm -rf -- "$tmpdir"' EXIT
+    key="$tmpdir/key.asc"
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
+        -o "$key" https://downloads.claude.ai/claude-desktop/key.asc
+    fingerprint="$(gpg --batch --with-colons --show-keys "$key" | \
+        awk -F: '$1 == "fpr" && !found { print $10; found = 1 }')"
+    if [ "$fingerprint" != "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" ]; then
+        echo "Claude Desktop signing key has an unexpected fingerprint: $fingerprint" >&2
+        exit 1
+    fi
+
+    sudo install -D -m 644 "$key" /usr/share/keyrings/claude-desktop-archive-keyring.asc
+    printf '%s\n' 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
+        | sudo tee /etc/apt/sources.list.d/claude-desktop.list >/dev/null
+    # 新增源后必须刷新索引，即使统一入口已设置 SKIP_APT_UPDATE。
+    sudo apt-get update
+    sudo apt-get install -y claude-desktop
+)
 
 # 解析最新正式版后下载官方 DEB，由 APT 处理依赖；退出时清理临时文件。
 install_cc_switch() (
@@ -438,7 +466,7 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
 fi
 
 echo "======================================"
-echo " Ubuntu/Debian AI Tools Installer (Codex / Claude Code / OpenCode / ast-grep / CC Switch)"
+echo " Ubuntu/Debian AI Tools Installer (Codex / Claude Code / Claude Desktop / OpenCode / ast-grep / CC Switch)"
 echo "======================================"
 
 require_non_root "./scripts/installers/install-ai-tools.sh"
@@ -457,7 +485,9 @@ apt_get_update_step 1
 
 print_step 2 "Installing base dependencies"
 sudo apt-get install -y \
+    ca-certificates \
     curl \
+    gnupg \
     jq
 
 print_step 3 "Installing Codex and ast-grep"
@@ -490,9 +520,13 @@ configure_codex_base
 print_step 8 "Installing the latest CC Switch release"
 install_cc_switch
 
-print_step 9 "Checking the environment"
+print_step 9 "Installing Claude Desktop from the official APT repository"
+install_claude_desktop
+
+print_step 10 "Checking the environment"
 printf 'Codex:      '; codex --version || true
 printf 'Claude Code: '; "$HOME/.local/bin/claude" --version
+printf 'Claude Desktop: '; dpkg-query -W -f='${Version}\n' claude-desktop
 printf 'OpenCode:   '; "$OPENCODE_BIN" --version || true
 printf 'ast-grep:   '; sg --version || true
 printf 'CC Switch:  '; dpkg-query -W -f='${Version}\n' cc-switch
@@ -502,4 +536,5 @@ echo "======================================"
 echo "Installation complete"
 echo "======================================"
 echo "Open a new terminal and run 'claude' to sign in and get started."
+echo "Launch Claude from the application menu or run 'claude-desktop' in a desktop session, then sign in."
 echo "Launch CC Switch from the application menu or run 'cc-switch' in a desktop session."
