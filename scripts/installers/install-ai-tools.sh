@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# 安装 AI 命令行工具并配置 MCP、Codex；依赖已准备好的 Node.js/npm 环境。
+# 安装 AI 工具及 CC Switch 桌面应用并配置 MCP、Codex；依赖已准备好的 Node.js/npm 环境。
 
 set -Eeuo pipefail
 
@@ -11,7 +11,7 @@ readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=6
+readonly SETUP_STEP_TOTAL=9
 
 # MCP 服务器
 # 无需鉴权的 MCP 端点
@@ -45,6 +45,57 @@ readonly CODEX_AGENTS_MAX_THREADS="${CODEX_AGENTS_MAX_THREADS:-6}"
 readonly CODEX_SUBAGENT_MODEL="${CODEX_SUBAGENT_MODEL:-gpt-5.6-terra}"
 readonly CODEX_SUBAGENT_REASONING="${CODEX_SUBAGENT_REASONING:-medium}"
 readonly CODEX_AGENTS_INTERRUPT_MESSAGE="${CODEX_AGENTS_INTERRUPT_MESSAGE:-enabled}"
+
+# 使用官方原生安装器，并让后续终端能找到用户目录中的命令。
+install_claude_code() {
+    local shell_rc
+    local path_line='export PATH="$HOME/.local/bin:$PATH"'
+
+    curl -fsSL https://claude.ai/install.sh | bash
+
+    shell_rc="$(select_shell_rc)"
+    touch "$shell_rc"
+    if ! grep -Fqx "$path_line" "$shell_rc"; then
+        printf '\n# Claude Code\n%s\n' "$path_line" >> "$shell_rc"
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+}
+
+# 解析最新正式版后下载官方 DEB，由 APT 处理依赖；退出时清理临时文件。
+install_cc_switch() (
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+        amd64) asset_arch=x86_64 ;;
+        arm64) asset_arch=arm64 ;;
+        *) echo "No CC Switch DEB configured for architecture: $arch" >&2; exit 1 ;;
+    esac
+
+    # 使用网页重定向获取 tag，无需 GitHub API 凭据或配额。
+    release_base="https://github.com/farion1231/cc-switch/releases"
+    release_url="$(curl -fLsS --retry 3 --connect-timeout 15 --max-time 120 \
+        -o /dev/null -w '%{url_effective}' "$release_base/latest")"
+    release_tag="${release_url##*/}"
+    if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Unable to resolve the latest CC Switch release: $release_url" >&2
+        exit 1
+    fi
+    echo "Latest CC Switch release: $release_tag"
+
+    tmpdir="$(mktemp -d /tmp/cc-switch.XXXXXX)"
+    trap 'rm -rf -- "$tmpdir"' EXIT
+    deb="$tmpdir/cc-switch.deb"
+    url="$release_base/download/$release_tag/CC-Switch-${release_tag}-Linux-${asset_arch}.deb"
+    curl -fL --retry 3 --connect-timeout 15 --max-time 600 -o "$deb" "$url"
+    if [ "$(dpkg-deb -f "$deb" Package)" != "cc-switch" ] ||
+       [ "$(dpkg-deb -f "$deb" Architecture)" != "$arch" ]; then
+        echo "Downloaded CC Switch package has an unexpected name or architecture." >&2
+        exit 1
+    fi
+    # APT 的 _apt 用户需要读取临时目录内的安装包。
+    chmod 755 "$tmpdir"
+    chmod 644 "$deb"
+    sudo apt-get install -y "$deb"
+)
 
 # 读取合并后的 OpenCode 配置，仅注册尚不存在的 MCP 服务。
 configure_opencode_mcp() {
@@ -387,7 +438,7 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
 fi
 
 echo "======================================"
-echo " Ubuntu/Debian AI CLI Tools Installer (Codex / OpenCode / ast-grep)"
+echo " Ubuntu/Debian AI Tools Installer (Codex / Claude Code / OpenCode / ast-grep / CC Switch)"
 echo "======================================"
 
 require_non_root "./scripts/installers/install-ai-tools.sh"
@@ -411,16 +462,14 @@ sudo apt-get install -y \
 
 print_step 3 "Installing Codex and ast-grep"
 npm install -g --allow-scripts=@ast-grep/cli \
-    @openai/codex \
-    @ast-grep/cli
+    @openai/codex@latest \
+    @ast-grep/cli@latest
 
-print_step 4 "Installing OpenCode"
+print_step 4 "Installing Claude Code"
+install_claude_code
+
+print_step 5 "Installing OpenCode"
 curl -fsSL https://opencode.ai/install | bash
-
-print_step 5 "Checking the environment"
-printf 'Codex:      '; codex --version || true
-printf 'OpenCode:   '; "$OPENCODE_BIN" --version || true
-printf 'ast-grep:   '; sg --version || true
 
 # MCP 服务器
 # Context7 与 Playwright 均无需凭据
@@ -435,9 +484,22 @@ codex mcp get context7 >/dev/null 2>&1 \
 codex mcp get playwright >/dev/null 2>&1 \
     || codex mcp add playwright -- npx -y "$MCP_PLAYWRIGHT_SPEC"
 
+print_step 7 "Configuring Codex"
 configure_codex_base
+
+print_step 8 "Installing the latest CC Switch release"
+install_cc_switch
+
+print_step 9 "Checking the environment"
+printf 'Codex:      '; codex --version || true
+printf 'Claude Code: '; "$HOME/.local/bin/claude" --version
+printf 'OpenCode:   '; "$OPENCODE_BIN" --version || true
+printf 'ast-grep:   '; sg --version || true
+printf 'CC Switch:  '; dpkg-query -W -f='${Version}\n' cc-switch
 
 echo
 echo "======================================"
 echo "Installation complete"
 echo "======================================"
+echo "Open a new terminal and run 'claude' to sign in and get started."
+echo "Launch CC Switch from the application menu or run 'cc-switch' in a desktop session."

@@ -296,13 +296,27 @@ Python 脚本通过 APT 安装系统 Python 与常用开发包，可运行 `./se
 Node.js/npm 脚本会通过 NodeSource 源安装 Node.js 与 npm，并全局安装前端工具链
 （pnpm、yarn、typescript、eslint、prettier），同时通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。
 
-AI CLI 工具由独立的 `ai-tools` 组件安装（依赖 `npm` 组件先装好）：`@openai/codex` 与
-`@ast-grep/cli` 由 npm 全局安装（`@ast-grep/cli` 提供 `sg` 命令），OpenCode 改由官方安装脚本
+AI 工具由独立的 `ai-tools` 组件安装（依赖 `npm` 组件先装好）。执行顺序为：基础依赖 →
+Codex/ast-grep → Claude Code → OpenCode → MCP → Codex 配置 → CC Switch → 最终验证。
+`@openai/codex@latest` 与 `@ast-grep/cli@latest` 由 npm 全局安装
+（`@ast-grep/cli` 提供 `sg` 命令），OpenCode 由官方安装脚本
 `curl -fsSL https://opencode.ai/install | bash` 安装到 `~/.opencode/bin`，并注册两个 MCP 服务器
 （Context7 / Playwright）。Context7 用远程 `https://mcp.context7.com/mcp`，Playwright 用本地 stdio
 `npx -y @playwright/mcp@latest`，两者均无需鉴权。OpenCode 端通过 `opencode mcp add` 写入
 `opencode.json[c]` 的 `mcp` 段（仅新增缺失项，不覆盖已有配置，并保留 JSONC 注释）；
 Codex 端用 `codex mcp add` 注册。
+
+Claude Code 也由 `ai-tools` 组件通过[官方原生安装器](https://code.claude.com/docs/en/setup)
+`curl -fsSL https://claude.ai/install.sh | bash` 安装，命令位于 `~/.local/bin/claude`。
+脚本会将 `~/.local/bin` 加入当前进程的 PATH，并在当前登录 Shell 对应的配置文件中
+补充 PATH 配置（重复运行不会重复追加相同配置），随后检查 `claude --version`。
+运行 `./setup.sh ai-tools` 安装；完成后打开新终端，执行 `claude` 并按提示登录。
+
+`ai-tools` 同时安装 [CC Switch](https://github.com/farion1231/cc-switch) 桌面应用。每次运行通过
+GitHub `releases/latest` 的重定向解析最新正式版，不固定版本号。脚本按 amd64 / arm64 架构下载
+该版本的官方 DEB，校验包名和架构后交由 APT 安装依赖，并在退出时清理临时文件。
+CC Switch 需要 glibc 2.35+ 和 WebKitGTK 4.1（如 Ubuntu 22.04+ / Debian 12+）。
+安装后可从应用菜单启动，或在桌面会话运行 `cc-switch`。
 
 ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。建议组合为
 `gpt-5.6-sol`、`high`、`default`、`on-request`、`workspace-write` 和启用网络；模型、推理强度、
