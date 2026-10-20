@@ -1,10 +1,13 @@
 # Linux Workstation Setup
 
-目录按安装流程、运行时辅助程序和公共函数划分：
+目录按配置模板、安装流程、运行时辅助程序和公共函数划分：
 
 ```text
 .
 ├── setup.sh                       # 统一入口
+├── config/
+│   └── codex/
+│       └── AGENTS.md              # Codex 全局多 Agent 协作规范模板
 ├── scripts/                       # 自定义安装与配置脚本
 │   ├── installers/               # 各组件安装入口
 │   │   ├── install-ai-tools.sh
@@ -297,7 +300,7 @@ Node.js/npm 脚本会通过 NodeSource 源安装 Node.js 与 npm，并全局安�
 （pnpm、yarn、typescript、eslint、prettier），同时通过 GitHub 官方 apt 源安装 `gh`（GitHub CLI）。
 
 AI 工具由独立的 `ai-tools` 组件安装（依赖 `npm` 组件先装好）。执行顺序为：基础依赖 →
-Codex/ast-grep → Claude Code → OpenCode → MCP → Codex 配置 → CC Switch → Claude Desktop → 最终验证。
+Codex/ast-grep → Claude Code → OpenCode → MCP → Codex 配置 → CC Switch → 最终验证。
 `@openai/codex@latest` 与 `@ast-grep/cli@latest` 由 npm 全局安装
 （`@ast-grep/cli` 提供 `sg` 命令），OpenCode 由官方安装脚本
 `curl -fsSL https://opencode.ai/install | bash` 安装到 `~/.opencode/bin`，并注册两个 MCP 服务器
@@ -311,13 +314,6 @@ Claude Code 也由 `ai-tools` 组件通过[官方原生安装器](https://code.c
 脚本会将 `~/.local/bin` 加入当前进程的 PATH，并在当前登录 Shell 对应的配置文件中
 补充 PATH 配置（重复运行不会重复追加相同配置），随后检查 `claude --version`。
 运行 `./setup.sh ai-tools` 安装；完成后打开新终端，执行 `claude` 并按提示登录。
-
-`ai-tools` 还通过 [Anthropic 官方 APT 源](https://code.claude.com/docs/en/desktop-linux)
-安装 Claude Desktop（Linux 测试版），支持 Ubuntu 22.04+ / Debian 12+ 的 amd64、arm64。
-脚本下载签名密钥并校验官方指纹，再写入独立 keyring 和 `claude-desktop.list`，刷新索引后
-安装 `claude-desktop`；后续版本通过系统 APT 更新。安装后从应用菜单启动 Claude，或执行
-`claude-desktop`，再登录 Anthropic 账户。Cowork 需要硬件虚拟化和 `kvm` 组权限；如需使用，
-执行 `sudo usermod -aG kvm "$USER"`，注销后重新登录。
 
 `ai-tools` 同时安装 [CC Switch](https://github.com/farion1231/cc-switch) 桌面应用。每次运行通过
 GitHub `releases/latest` 的重定向解析最新正式版，不固定版本号。脚本按 amd64 / arm64 架构下载
@@ -334,14 +330,20 @@ ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。�
 其中 `CODEX_NETWORK` 接受 `enabled` 或 `disabled`，并分别映射为 TOML 布尔值 `true` 或 `false`。
 
 脚本同时写入 Codex 的 `[agents]` 全局子代理配置：默认启用子代理，单个会话最多并发 6 个，
-子代理默认使用 `gpt-5.6-terra` 和 `medium` 推理强度，并保留代理被中断时的上下文消息。
+子代理默认使用 `gpt-6.1-sol` 和 `medium` 推理强度，并保留代理被中断时的上下文消息。
 可通过 `CODEX_AGENTS_ENABLED`、`CODEX_AGENTS_MAX_THREADS`、`CODEX_SUBAGENT_MODEL`、
 `CODEX_SUBAGENT_REASONING`、`CODEX_AGENTS_INTERRUPT_MESSAGE` 覆盖；两个开关接受 `enabled` 或
 `disabled`，并发数必须为正整数。已有 `[agents]` 表会原位更新，其它配置和自定义代理不会被覆盖；
 旧版 `max_threads` 会迁移为 `max_concurrent_threads_per_session`。
 
+全局多 Agent 协作规范保存在仓库的 `config/codex/AGENTS.md`。`ai-tools` 配置 Codex 时，
+会在目标不存在时将模板复制到 `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`；已有文件内容相同则跳过，
+内容不同时保留原文件并输出 `diff -u` 比较命令，不自动覆盖用户定制内容。
+项目专属约束可放在各项目的 `AGENTS.md` 中。
+
 ## 维护约定
 
+- `config/` 保存随安装脚本分发的配置模板；Codex 全局协作规范在 `config/codex/AGENTS.md` 中维护。
 - `vendor/` 用于保存上游发布的原始安装器。安装器文件不提交到 Git 仓库，
   通过 `vendor/download-installers.sh` 下载。
 - `scripts/installers/` 保存各组件的安装流程、默认配置和对官方安装器的封装。

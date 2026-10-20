@@ -24,7 +24,7 @@ Components:
   mirrors         Switch apt/pip/conda sources to a domestic mirror
   git             Install Git with HTTPS and SSH support
   npm             Install Node.js, npm, and common frontend CLI tools
-  ai-tools        Install AI tools (Codex, Claude Code, Claude Desktop, OpenCode, ast-grep, CC Switch) and MCP servers
+  ai-tools        Install AI tools (Codex, Claude Code, OpenCode, ast-grep, CC Switch) and MCP servers
   fcitx5-rime     Install Fcitx 5, Rime, and Rime Ice
   fonts           Install common Latin, programming, CJK, and Emoji fonts
   zsh             Install and configure Zsh, Oh My Zsh, and plugins
