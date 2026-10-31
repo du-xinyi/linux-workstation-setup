@@ -1,16 +1,50 @@
 #!/usr/bin/env bash
 
-# 安装 AI 工具及 CC Switch 桌面应用并配置 MCP、Codex 和全局协作规范；依赖已准备好的 Node.js/npm 环境。
+# 安装 AI 工具、CC Switch，并配置 MCP、Codex 和全局协作规范；需要预先安装 Node.js/npm。
 
 set -Eeuo pipefail
 
 trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# 优先复用仓库的公共函数；独立下载此文件时也能直接运行。
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../../scripts/lib/common.sh" ]]; then
+    ROOT_DIR="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+    # shellcheck disable=SC1091
+    . "$ROOT_DIR/scripts/lib/common.sh"
+else
+    ROOT_DIR=""
+    require_non_root() {
+        if (( EUID == 0 )); then
+            echo "Please run as a normal user, not root: $1" >&2
+            return 1
+        fi
+    }
+    require_debian_like() {
+        if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg >/dev/null 2>&1; then
+            echo "This installer requires Ubuntu/Debian with APT and dpkg." >&2
+            return 1
+        fi
+    }
+    require_sudo() {
+        if ! command -v sudo >/dev/null 2>&1; then
+            echo "${1:-sudo was not found.}" >&2
+            return 1
+        fi
+    }
+    select_shell_rc() {
+        case "${SHELL:-/bin/bash}" in
+            */zsh) printf '%s\n' "$HOME/.zshrc" ;;
+            *)     printf '%s\n' "$HOME/.bashrc" ;;
+        esac
+    }
+    print_step() { printf '\n[%s/%s] %s\n' "$1" "$SETUP_STEP_TOTAL" "$2"; }
+    apt_get_update_step() {
+        print_step "$1" "Updating APT package index"
+        sudo apt-get update
+    }
+fi
 readonly ROOT_DIR
-# shellcheck disable=SC1091
-. "$ROOT_DIR/scripts/lib/common.sh"
-
 readonly SETUP_STEP_TOTAL=9
 
 # MCP 服务器
@@ -19,31 +53,40 @@ readonly MCP_CONTEXT7_URL="https://mcp.context7.com/mcp"
 readonly MCP_PLAYWRIGHT_SPEC="@playwright/mcp@latest"
 readonly OPENCODE_BIN="${OPENCODE_BIN:-$HOME/.opencode/bin/opencode}"
 
-# Codex 基础配置，可通过同名环境变量覆盖
+# Codex 模型配置，可通过同名环境变量覆盖
 
-# 默认模型
+# 主模型
 readonly CODEX_MODEL="${CODEX_MODEL:-gpt-6.1-sol}"
-
 # 推理强度
 readonly CODEX_REASONING="${CODEX_REASONING:-high}"
-
-# 服务等级
+# 服务等级：default 或 fast
 readonly CODEX_SERVICE_TIER="${CODEX_SERVICE_TIER:-default}"
 
-# 命令审批策略：untrusted、on-request（推荐）或 never
-readonly CODEX_APPROVAL="${CODEX_APPROVAL:-never}"
-
-# 文件系统沙箱：read-only、workspace-write（推荐）或 danger-full-access
-readonly CODEX_SANDBOX="${CODEX_SANDBOX:-danger-full-access}"
-
-# workspace-write 沙箱的网络访问开关
-readonly CODEX_NETWORK="${CODEX_NETWORK:-enabled}"
-
-# 子代理全局配置
-readonly CODEX_AGENTS_ENABLED="${CODEX_AGENTS_ENABLED:-enabled}"
-readonly CODEX_AGENTS_MAX_THREADS="${CODEX_AGENTS_MAX_THREADS:-6}"
+# 子 Agent 模型与推理强度
 readonly CODEX_SUBAGENT_MODEL="${CODEX_SUBAGENT_MODEL:-gpt-6.1-sol}"
 readonly CODEX_SUBAGENT_REASONING="${CODEX_SUBAGENT_REASONING:-medium}"
+
+# 记忆提取与合并模型
+readonly CODEX_EXTRACT_MODEL="${CODEX_EXTRACT_MODEL:-gpt-6-luna}"
+readonly CODEX_CONSOLIDATION_MODEL="${CODEX_CONSOLIDATION_MODEL:-gpt-6.1-terra}"
+
+# Codex 权限与功能配置，可通过同名环境变量覆盖
+
+# 命令审批策略：on-request（推荐）或 never
+readonly CODEX_APPROVAL="${CODEX_APPROVAL:-never}"
+
+# 文件系统沙箱：read-only、workspace-write 或 danger-full-access
+# 保留原脚本的无沙箱、免审批设置；请仅在可信环境中使用。
+readonly CODEX_SANDBOX="${CODEX_SANDBOX:-danger-full-access}"
+
+# workspace-write 模式的网络权限：enabled / disabled
+readonly CODEX_NETWORK="${CODEX_NETWORK:-enabled}"
+
+# 多代理和记忆开关：enabled / disabled
+readonly CODEX_MULTI_AGENT="${CODEX_MULTI_AGENT:-enabled}"
+readonly CODEX_MEMORIES="${CODEX_MEMORIES:-enabled}"
+readonly CODEX_AGENTS_ENABLED="${CODEX_AGENTS_ENABLED:-enabled}"
+readonly CODEX_AGENTS_MAX_THREADS="${CODEX_AGENTS_MAX_THREADS:-6}"
 readonly CODEX_AGENTS_INTERRUPT_MESSAGE="${CODEX_AGENTS_INTERRUPT_MESSAGE:-enabled}"
 
 # 使用官方原生安装器，并让后续终端能找到用户目录中的命令。
@@ -121,14 +164,14 @@ configure_opencode_mcp() {
     fi
 }
 
-# 只查首个 TOML 表之前的键，避免把子表中的同名字段误判为顶层配置。
+# 只查首个 TOML 表之前的键；兼容裸键、双引号键和单引号键。
 codex_top_level_has_key() {
     local path="$1"
     local key="$2"
 
     awk -v key="$key" '
         /^[[:space:]]*\[/ { exit 1 }
-        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { found = 1; exit }
+        $0 ~ "^[[:space:]]*(" key "|\"" key "\"|\047" key "\047)[[:space:]]*=" { found = 1; exit }
         END { exit(found ? 0 : 1) }
     ' "$path"
 }
@@ -185,7 +228,7 @@ update_codex_top_level_config() {
 
         in_top_level {
             for (i = 1; i <= 5; i++) {
-                if ($0 ~ "^[[:space:]]*" keys[i] "[[:space:]]*=") {
+                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
                     print keys[i] " = \"" values[i] "\""
                     written[i] = 1
                     next
@@ -259,7 +302,7 @@ update_codex_agents_config() {
 
         in_agents_table {
             # max_threads 是旧版别名；统一迁移到当前正式键名，避免两个别名同时存在。
-            if ($0 ~ /^[[:space:]]*max_threads[[:space:]]*=/) {
+            if ($0 ~ /^[[:space:]]*(max_threads|"max_threads"|\047max_threads\047)[[:space:]]*=/) {
                 if (!written[2]) {
                     print keys[2] " = " values[2]
                     written[2] = 1
@@ -268,7 +311,7 @@ update_codex_agents_config() {
             }
 
             for (i = 1; i <= 5; i++) {
-                if ($0 ~ "^[[:space:]]*" keys[i] "[[:space:]]*=") {
+                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
                     if (!written[i]) {
                         print keys[i] " = " values[i]
                         written[i] = 1
@@ -292,9 +335,139 @@ update_codex_agents_config() {
     ' "$path" >"$out"
 }
 
+# 更新 memories 表，保留其它记忆配置及子表。
+update_codex_memories_config() {
+    local path="$1"
+    local out="$2"
+
+    CODEX_CFG_EXTRACT_MODEL="$CODEX_EXTRACT_MODEL" \
+    CODEX_CFG_CONSOLIDATION_MODEL="$CODEX_CONSOLIDATION_MODEL" \
+    awk '
+        BEGIN {
+            keys[1] = "extract_model"
+            keys[2] = "consolidation_model"
+            values[1] = ENVIRON["CODEX_CFG_EXTRACT_MODEL"]
+            values[2] = ENVIRON["CODEX_CFG_CONSOLIDATION_MODEL"]
+            in_memories_table = 0
+            memories_table_found = 0
+        }
+
+        function write_missing(    i) {
+            for (i = 1; i <= 2; i++) {
+                if (!written[i]) {
+                    print keys[i] " = \"" values[i] "\""
+                    written[i] = 1
+                }
+            }
+        }
+
+        /^[[:space:]]*\[/ {
+            if (in_memories_table) {
+                write_missing()
+            }
+
+            table_header = $0
+            sub(/[[:space:]]*#.*/, "", table_header)
+            in_memories_table = (table_header ~ /^[[:space:]]*\[[[:space:]]*(memories|"memories"|\047memories\047)[[:space:]]*\][[:space:]]*$/)
+            if (in_memories_table) {
+                memories_table_found = 1
+            }
+
+            print
+            next
+        }
+
+        in_memories_table {
+            for (i = 1; i <= 2; i++) {
+                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
+                    if (!written[i]) {
+                        print keys[i] " = \"" values[i] "\""
+                        written[i] = 1
+                    }
+                    next
+                }
+            }
+        }
+
+        { print }
+
+        END {
+            if (in_memories_table) {
+                write_missing()
+            } else if (!memories_table_found) {
+                print ""
+                print "[memories]"
+                write_missing()
+            }
+        }
+    ' "$path" >"$out"
+}
+
+# 开关必须放在 [features] 表内，不能直接当作 shell 命令运行。
+update_codex_features_config() {
+    local path="$1"
+    local out="$2"
+    local multi_agent_value="$3"
+    local memories_value="$4"
+
+    CODEX_CFG_MULTI_AGENT="$multi_agent_value" \
+    CODEX_CFG_MEMORIES="$memories_value" \
+    awk '
+        BEGIN {
+            keys[1] = "multi_agent"
+            keys[2] = "memories"
+            values[1] = ENVIRON["CODEX_CFG_MULTI_AGENT"]
+            values[2] = ENVIRON["CODEX_CFG_MEMORIES"]
+            in_features = 0
+            found_features = 0
+        }
+        function write_missing(    i) {
+            for (i = 1; i <= 2; i++) {
+                if (!written[i]) {
+                    print keys[i] " = " values[i]
+                    written[i] = 1
+                }
+            }
+        }
+        /^[[:space:]]*\[/ {
+            if (in_features) write_missing()
+            header = $0
+            sub(/[[:space:]]*#.*/, "", header)
+            in_features = (header ~ /^[[:space:]]*\[[[:space:]]*(features|"features"|\047features\047)[[:space:]]*\][[:space:]]*$/)
+            if (in_features) found_features = 1
+            print
+            next
+        }
+        in_features {
+            for (i = 1; i <= 2; i++) {
+                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
+                    if (!written[i]) {
+                        print keys[i] " = " values[i]
+                        written[i] = 1
+                    }
+                    next
+                }
+            }
+        }
+        { print }
+        END {
+            if (in_features) {
+                write_missing()
+            } else if (!found_features) {
+                print ""
+                print "[features]"
+                write_missing()
+            }
+        }
+    ' "$path" >"$out"
+}
+
 # 校验环境变量并更新用户配置；配置位置遵循 CODEX_HOME。
 configure_codex_base() {
     local codex_cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    local config_dir
+    local staging
+    local original_exists=0
     local pair
     local key
     local val
@@ -302,8 +475,12 @@ configure_codex_base() {
     local agents_enabled_value
     local agents_interrupt_value
     local agents_tmp
+    local memories_tmp
     local network_value
+    local multi_agent_value
+    local memories_value
     local network_tmp
+    local features_tmp
     local top_level_tmp
     local codex_pairs=(
         "model|$CODEX_MODEL"
@@ -313,6 +490,37 @@ configure_codex_base() {
         "sandbox_mode|$CODEX_SANDBOX"
     )
     local codex_missing=()
+
+    case "$CODEX_MULTI_AGENT" in
+        enabled) multi_agent_value="true" ;;
+        disabled) multi_agent_value="false" ;;
+        *) echo "Invalid CODEX_MULTI_AGENT: $CODEX_MULTI_AGENT (expected enabled or disabled)" >&2; return 1 ;;
+    esac
+    case "$CODEX_MEMORIES" in
+        enabled) memories_value="true" ;;
+        disabled) memories_value="false" ;;
+        *) echo "Invalid CODEX_MEMORIES: $CODEX_MEMORIES (expected enabled or disabled)" >&2; return 1 ;;
+    esac
+    case "$CODEX_SANDBOX" in
+        read-only|workspace-write|danger-full-access) ;;
+        *) echo "Invalid CODEX_SANDBOX: $CODEX_SANDBOX" >&2; return 1 ;;
+    esac
+    case "$CODEX_APPROVAL" in
+        on-request|never) ;;
+        *) echo "Invalid CODEX_APPROVAL: $CODEX_APPROVAL" >&2; return 1 ;;
+    esac
+    case "$CODEX_REASONING" in
+        none|minimal|low|medium|high|xhigh|max|ultra) ;;
+        *) echo "Invalid CODEX_REASONING: $CODEX_REASONING" >&2; return 1 ;;
+    esac
+    case "$CODEX_SUBAGENT_REASONING" in
+        none|minimal|low|medium|high|xhigh|max|ultra) ;;
+        *) echo "Invalid CODEX_SUBAGENT_REASONING: $CODEX_SUBAGENT_REASONING" >&2; return 1 ;;
+    esac
+    case "$CODEX_SERVICE_TIER" in
+        default|fast) ;;
+        *) echo "Invalid CODEX_SERVICE_TIER: $CODEX_SERVICE_TIER" >&2; return 1 ;;
+    esac
 
     case "$CODEX_NETWORK" in
         enabled) network_value="true" ;;
@@ -353,20 +561,37 @@ configure_codex_base() {
     done
     validate_codex_config_value "default_subagent_model" "$CODEX_SUBAGENT_MODEL"
     validate_codex_config_value "default_subagent_reasoning_effort" "$CODEX_SUBAGENT_REASONING"
+    # validate_codex_config_value "extract_model" "$CODEX_EXTRACT_MODEL"
+    # validate_codex_config_value "consolidation_model" "$CODEX_CONSOLIDATION_MODEL"
 
-    mkdir -p "$(dirname "$codex_cfg")"
-    [ -f "$codex_cfg" ] || : > "$codex_cfg"
+    config_dir="$(dirname "$codex_cfg")"
+    mkdir -p "$config_dir"
+    if [ -L "$codex_cfg" ] || { [ -e "$codex_cfg" ] && [ ! -f "$codex_cfg" ]; }; then
+        echo "Codex config is not a regular file: $codex_cfg" >&2
+        return 1
+    fi
+    if [ -f "$codex_cfg" ]; then
+        original_exists=1
+    fi
+    # 所有修改都先写在临时文件，避免中途失败导致用户配置损坏。
+    staging="$(mktemp "$config_dir/.config.toml.XXXXXX")"
+    if (( original_exists )); then
+        cp -p -- "$codex_cfg" "$staging"
+    else
+        chmod 600 "$staging"
+    fi
 
     for pair in "${codex_pairs[@]}"; do
         key="${pair%%|*}"
-        if ! codex_top_level_has_key "$codex_cfg" "$key"; then
+        if ! codex_top_level_has_key "$staging" "$key"; then
             codex_missing+=("$pair")
         fi
     done
 
     top_level_tmp="$(mktemp)"
-    update_codex_top_level_config "$codex_cfg" "$top_level_tmp"
-    mv "$top_level_tmp" "$codex_cfg"
+    update_codex_top_level_config "$staging" "$top_level_tmp"
+    cat "$top_level_tmp" >"$staging"
+    rm -f -- "$top_level_tmp"
 
     # 网络权限属于 workspace-write 沙箱表，顶层同名字符串不会被 Codex 识别
     network_tmp="$(mktemp)"
@@ -397,11 +622,11 @@ configure_codex_base() {
             next
         }
 
-        before_first_table && /^[[:space:]]*network_access[[:space:]]*=/ {
+        before_first_table && /^[[:space:]]*(network_access|"network_access"|\047network_access\047)[[:space:]]*=/ {
             next
         }
 
-        in_workspace_table && /^[[:space:]]*network_access[[:space:]]*=/ {
+        in_workspace_table && /^[[:space:]]*(network_access|"network_access"|\047network_access\047)[[:space:]]*=/ {
             print "network_access = " value
             network_written = 1
             next
@@ -418,20 +643,47 @@ configure_codex_base() {
                 print "network_access = " value
             }
         }
-    ' "$codex_cfg" >"$network_tmp"
-    mv "$network_tmp" "$codex_cfg"
+    ' "$staging" >"$network_tmp"
+    cat "$network_tmp" >"$staging"
+    rm -f -- "$network_tmp"
+
+    features_tmp="$(mktemp)"
+    update_codex_features_config "$staging" "$features_tmp" "$multi_agent_value" "$memories_value"
+    cat "$features_tmp" >"$staging"
+    rm -f -- "$features_tmp"
 
     agents_tmp="$(mktemp)"
     update_codex_agents_config \
-        "$codex_cfg" "$agents_tmp" "$agents_enabled_value" "$agents_interrupt_value"
-    mv "$agents_tmp" "$codex_cfg"
+        "$staging" "$agents_tmp" "$agents_enabled_value" "$agents_interrupt_value"
+    cat "$agents_tmp" >"$staging"
+    rm -f -- "$agents_tmp"
+
+    memories_tmp="$(mktemp)"
+    update_codex_memories_config "$staging" "$memories_tmp"
+    cat "$memories_tmp" >"$staging"
+    rm -f -- "$memories_tmp"
+
+    # 系统有 Python 3.11+ 时，进行标准 TOML 语法校验（Ubuntu 24.04 可用）。
+    if command -v python3 >/dev/null 2>&1; then
+        if python3 -c 'import tomllib' >/dev/null 2>&1; then
+            if ! python3 -c 'import sys,tomllib; tomllib.load(open(sys.argv[1],"rb"))' "$staging"; then
+                echo "Generated Codex config is invalid; original kept: $codex_cfg" >&2
+                rm -f -- "$staging"
+                return 1
+            fi
+        fi
+    fi
+    if (( original_exists )); then
+        cp -p -- "$codex_cfg" "${codex_cfg}.bak"
+    fi
+    mv -f -- "$staging" "$codex_cfg"
 
     if [ "${#codex_missing[@]}" -gt 0 ]; then
         names=""
         for pair in "${codex_missing[@]}"; do names="$names ${pair%%|*}"; done
-        echo "Codex config -> $codex_cfg (added top-level:$names; agents synchronized)"
+        echo "Codex config -> $codex_cfg (added top-level:$names; agents and memories synchronized)"
     else
-        echo "Codex config -> $codex_cfg (base and agents synchronized)"
+        echo "Codex config -> $codex_cfg (base, agents and memories synchronized)"
     fi
 }
 
@@ -439,6 +691,11 @@ configure_codex_base() {
 install_codex_agent_instructions() {
     local source="$ROOT_DIR/config/codex/AGENTS.md"
     local target="${1:-${CODEX_HOME:-$HOME/.codex}/AGENTS.md}"
+
+    if [ ! -f "$source" ]; then
+        echo "Repository AGENTS.md template not found; skipping: $source" >&2
+        return 0
+    fi
 
     if [ -e "$target" ] || [ -L "$target" ]; then
         if cmp -s -- "$source" "$target"; then
@@ -462,13 +719,17 @@ echo "======================================"
 echo " Ubuntu/Debian AI Tools Installer (Codex / Claude Code / OpenCode / ast-grep / CC Switch)"
 echo "======================================"
 
-require_non_root "./scripts/installers/install-ai-tools.sh"
+require_non_root "bash install-ai-tools-fixed.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 
 # Codex 与 ast-grep 通过 npm 全局安装，依赖已配置好的 npm 前缀
 if ! command -v npm >/dev/null 2>&1; then
     echo "npm was not found. Run './setup.sh npm' first." >&2
+    exit 1
+fi
+if ! command -v npx >/dev/null 2>&1; then
+    echo "npx was not found. Check your Node.js/npm installation." >&2
     exit 1
 fi
 NPM_PREFIX_BIN="$(npm config get prefix)/bin"

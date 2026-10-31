@@ -21,7 +21,7 @@ Usage:
 
 Components:
   all             Install all components in the recommended order
-  mirrors         Switch apt/pip/conda sources to a domestic mirror
+  mirrors         Configure Tsinghua TUNA mirrors for apt/pip/uv/conda
   git             Install Git with HTTPS and SSH support
   npm             Install Node.js, npm, and common frontend CLI tools
   ai-tools        Install AI tools (Codex, Claude Code, OpenCode, ast-grep, CC Switch) and MCP servers
@@ -54,7 +54,7 @@ Examples:
   ./setup.sh python-tools
   ./setup.sh simulators
   ./setup.sh extras
-  MIRROR_PROVIDER=aliyun ./setup.sh mirrors
+  ./setup.sh mirrors
 EOF
 }
 

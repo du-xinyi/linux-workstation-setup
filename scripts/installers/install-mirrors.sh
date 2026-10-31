@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# 统一配置 APT、pip 与 Conda 镜像；APT 修改系统文件，后两者写入用户目录。
+# 统一配置 APT、pip、uv 与 Conda 清华镜像；APT 修改系统文件，其余写入用户目录。
 
 set -Eeuo pipefail
 
@@ -10,13 +10,15 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=5
+readonly SETUP_STEP_TOTAL=6
 
-# 镜像提供商:tuna(清华 TUNA)、aliyun(阿里云)、ustc(中科大)
-# 可通过 MIRROR_PROVIDER 环境变量整体切换;也可用更具体的同名环境变量
-# 覆盖单项地址:APT_MIRROR_HOST / PIP_INDEX_URL / PIP_TRUSTED_HOST /
-# CONDA_CHANNEL_MAIN / CONDA_CHANNEL_R / CONDA_CLOUD_BASE
-readonly MIRROR_PROVIDER="${MIRROR_PROVIDER:-tuna}"
+# 统一使用清华 TUNA，不从环境变量读取镜像地址。
+readonly APT_MIRROR_HOST="mirrors.tuna.tsinghua.edu.cn"
+readonly PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+readonly PIP_TRUSTED_HOST="pypi.tuna.tsinghua.edu.cn"
+readonly CONDA_CHANNEL_MAIN="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main"
+readonly CONDA_CHANNEL_R="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r"
+readonly CONDA_CLOUD_BASE="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"
 
 # 待替换的官方 apt 域名;仅替换域名,路径(/ubuntu、/debian-security 等)保持不变
 readonly -a APT_OFFICIAL_DOMAINS=(
@@ -25,48 +27,6 @@ readonly -a APT_OFFICIAL_DOMAINS=(
     "deb.debian.org"
     "security.debian.org"
 )
-
-# 按提供商解析各源默认地址,写入 _default_* 变量
-resolve_mirror_defaults() {
-    case "$MIRROR_PROVIDER" in
-        tuna)
-            _default_apt_host="mirrors.tuna.tsinghua.edu.cn"
-            _default_pip_index="https://pypi.tuna.tsinghua.edu.cn/simple"
-            _default_pip_host="pypi.tuna.tsinghua.edu.cn"
-            _default_conda_main="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main"
-            _default_conda_r="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r"
-            _default_conda_cloud="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"
-            ;;
-        aliyun)
-            _default_apt_host="mirrors.aliyun.com"
-            _default_pip_index="https://mirrors.aliyun.com/pypi/simple/"
-            _default_pip_host="mirrors.aliyun.com"
-            _default_conda_main="https://mirrors.aliyun.com/anaconda/pkgs/main"
-            _default_conda_r="https://mirrors.aliyun.com/anaconda/pkgs/r"
-            _default_conda_cloud="https://mirrors.aliyun.com/anaconda/cloud"
-            ;;
-        ustc)
-            _default_apt_host="mirrors.ustc.edu.cn"
-            _default_pip_index="https://pypi.mirrors.ustc.edu.cn/simple/"
-            _default_pip_host="pypi.mirrors.ustc.edu.cn"
-            _default_conda_main="https://mirrors.ustc.edu.cn/anaconda/pkgs/main"
-            _default_conda_r="https://mirrors.ustc.edu.cn/anaconda/pkgs/r"
-            _default_conda_cloud="https://mirrors.ustc.edu.cn/anaconda/cloud"
-            ;;
-        *)
-            echo "Unsupported MIRROR_PROVIDER: $MIRROR_PROVIDER (expected tuna, aliyun, or ustc)" >&2
-            return 1
-            ;;
-    esac
-}
-
-resolve_mirror_defaults
-readonly APT_MIRROR_HOST="${APT_MIRROR_HOST:-$_default_apt_host}"
-readonly PIP_INDEX_URL="${PIP_INDEX_URL:-$_default_pip_index}"
-readonly PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-$_default_pip_host}"
-readonly CONDA_CHANNEL_MAIN="${CONDA_CHANNEL_MAIN:-$_default_conda_main}"
-readonly CONDA_CHANNEL_R="${CONDA_CHANNEL_R:-$_default_conda_r}"
-readonly CONDA_CLOUD_BASE="${CONDA_CLOUD_BASE:-$_default_conda_cloud}"
 
 # 输出系统 codename,便于核对镜像是否覆盖当前发行版
 detect_apt_codename() {
@@ -136,6 +96,20 @@ configure_pip() {
     fi
 }
 
+# 重写用户 uv.toml；无需预先安装 uv，遵循 XDG_CONFIG_HOME。
+configure_uv() {
+    local uv_conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/uv"
+    local uv_conf="$uv_conf_dir/uv.toml"
+
+    mkdir -p "$uv_conf_dir"
+    cat > "$uv_conf" <<EOF
+[[index]]
+url = "$PIP_INDEX_URL"
+default = true
+EOF
+    printf '  wrote      %s\n' "$uv_conf"
+}
+
 # 重写用户 .condarc；即使 Conda 尚未安装，后续安装也可读取此配置。
 configure_conda() {
     local condarc="$HOME/.condarc"
@@ -165,17 +139,17 @@ EOF
 }
 
 echo "======================================"
-echo " Mirror Source Installer (apt / pip / conda)"
+echo " Tsinghua TUNA Mirror Installer (apt / pip / uv / conda)"
 echo "======================================"
 
 require_non_root "./scripts/installers/install-mirrors.sh"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 
-print_step 1 "Selecting mirror provider"
-printf '  provider   %s\n' "$MIRROR_PROVIDER"
+print_step 1 "Using Tsinghua TUNA mirrors"
 printf '  apt host   %s\n' "$APT_MIRROR_HOST"
 printf '  pip index  %s\n' "$PIP_INDEX_URL"
+printf '  uv index   %s\n' "$PIP_INDEX_URL"
 printf '  conda      %s\n' "$CONDA_CHANNEL_MAIN"
 
 print_step 2 "Switching apt sources to $APT_MIRROR_HOST"
@@ -192,7 +166,10 @@ fi
 print_step 4 "Configuring pip index"
 configure_pip
 
-print_step 5 "Configuring conda channels"
+print_step 5 "Configuring uv index"
+configure_uv
+
+print_step 6 "Configuring conda channels"
 configure_conda
 
 echo

@@ -106,19 +106,26 @@ Ruby 之前安装，Ruby 构建时会优先加载 rustup 管理的 Cargo 环境�
 这次预更新会交给 Mirrors 组件（它先换源再刷新索引，避免用官方源做无谓的首次更新）；
 Node.js 添加 NodeSource 仓库后仍会再次刷新包索引。
 
-Mirrors 脚本将 apt、pip 与 conda 的软件源切换到国内镜像，默认使用清华 TUNA，可通过
-`MIRROR_PROVIDER` 环境变量在 `tuna`、`aliyun`、`ustc` 之间切换；也可用更具体的同名环境
-变量覆盖单项地址：`APT_MIRROR_HOST`、`PIP_INDEX_URL`、`PIP_TRUSTED_HOST`、
-`CONDA_CHANNEL_MAIN`、`CONDA_CHANNEL_R`、`CONDA_CLOUD_BASE`。
+Mirrors 脚本将 apt、pip、uv 与 conda 的软件源统一配置为清华 TUNA，仅保留清华源，
+不再支持 `MIRROR_PROVIDER` 或单项镜像地址环境变量覆盖。运行 `./setup.sh mirrors`
+即可配置；全量安装也会自动执行。
 
 - **apt**：扫描 `/etc/apt/sources.list` 与 `/etc/apt/sources.list.d/` 下的 `*.list`、
   `*.sources`（含 Ubuntu 24.04 / Debian 12 的 deb822 格式），将 `archive.ubuntu.com`、
   `security.ubuntu.com`、`deb.debian.org`、`security.debian.org` 替换为镜像域名并升级为
   HTTPS，路径保持不变；换源后执行一次 `apt-get update`。脚本可重复运行且幂等。
 - **pip**：写入 `~/.config/pip/pip.conf`（XDG 标准位置）。
+- **uv**：写入 `${XDG_CONFIG_HOME:-$HOME/.config}/uv/uv.toml`，使用 `[[index]]` 和
+  `default = true` 将清华 PyPI 镜像设为默认索引，适用于 `uv pip`、`uv sync`、`uv run`
+  和 `uvx`；uv 尚未安装时也可提前配置。配置格式参考
+  [uv 官方文档](https://docs.astral.sh/uv/configuration/files/)和
+  [清华 PyPI 镜像说明](https://mirrors.tuna.tsinghua.edu.cn/help/pypi/)。
 - **conda**：写入 `~/.condarc`，镜像化 `defaults` 的 `main`/`r` 渠道，并把 `conda-forge`、
   `pytorch` 指向镜像；若 conda 已安装，会清空索引缓存。conda 尚未安装时配置同样写入，
   待 Miniconda 安装后即生效。
+
+pip、uv、conda 的上述配置文件由脚本重写，已有自定义配置请先备份。
+uv 的项目配置、环境变量或命令行参数仍可覆盖用户级镜像设置。
 
 Git 脚本通过系统 apt 源安装 `git`、`ca-certificates` 和 `openssh-client`，支持 HTTPS
 与 SSH 访问远程仓库，安装后输出 Git 版本。可单独运行 `./setup.sh git` 或
