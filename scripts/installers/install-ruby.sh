@@ -70,9 +70,15 @@ sudo apt-get install -y \
     libssl-dev \
     libyaml-dev \
     patch \
-    rustc \
     uuid-dev \
     zlib1g-dev
+
+# YJIT 构建需要 rustc；已由 rust 组件安装 rustup 时不再安装系统 rustc
+if [ -x "$HOME/.cargo/bin/rustc" ]; then
+    echo "rustup-managed rustc found; skipping the system rustc package."
+else
+    sudo apt-get install -y rustc
+fi
 
 # rbenv 负责管理多个 Ruby 版本
 print_step 3 "Installing or updating rbenv"
@@ -120,7 +126,13 @@ if ! grep -Fq 'rbenv init' "$shell_rc"; then
     {
         echo
         echo '# Ruby version manager: rbenv'
-        printf 'eval "$("$HOME/.rbenv/bin/rbenv" init - --no-rehash %s)"\n' "$shell_name"
+        if [ "$RBENV_ROOT" = "$HOME/.rbenv" ]; then
+            printf 'eval "$("$HOME/.rbenv/bin/rbenv" init - --no-rehash %s)"\n' "$shell_name"
+        else
+            # 自定义 RBENV_ROOT 时同时导出该变量，使 rbenv 使用相同的版本目录
+            printf 'export RBENV_ROOT=%q\n' "$RBENV_ROOT"
+            printf 'eval "$(%q init - --no-rehash %s)"\n' "$RBENV_BIN" "$shell_name"
+        fi
     } >>"$shell_rc"
 fi
 

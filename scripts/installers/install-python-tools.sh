@@ -11,7 +11,12 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly INSTALLER="$ROOT_DIR/vendor/Miniconda3-latest-Linux-x86_64.sh"
+case "$(uname -m)" in
+    x86_64|amd64)  miniconda_arch=x86_64 ;;
+    aarch64|arm64) miniconda_arch=aarch64 ;;
+    *) echo "Miniconda is not available for architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+readonly INSTALLER="$ROOT_DIR/vendor/Miniconda3-latest-Linux-${miniconda_arch}.sh"
 readonly SETUP_STEP_TOTAL=4
 readonly UV_BIN_DIR="${UV_INSTALL_DIR:-$HOME/.local/bin}"
 install_prefix="${HOME:-/opt}/miniconda3"

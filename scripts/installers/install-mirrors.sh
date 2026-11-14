@@ -20,12 +20,14 @@ readonly CONDA_CHANNEL_MAIN="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/
 readonly CONDA_CHANNEL_R="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r"
 readonly CONDA_CLOUD_BASE="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"
 
-# 待替换的官方 apt 域名;仅替换域名,路径(/ubuntu、/debian-security 等)保持不变
+# 待替换的官方 apt 域名（ERE）;仅替换域名,路径(/ubuntu、/ubuntu-ports、/debian-security 等)保持不变
+# 含国家子域名(如 cn.archive.ubuntu.com)与 arm64 等架构使用的 ports.ubuntu.com
 readonly -a APT_OFFICIAL_DOMAINS=(
-    "archive.ubuntu.com"
-    "security.ubuntu.com"
-    "deb.debian.org"
-    "security.debian.org"
+    '([a-z]{2}\.)?archive\.ubuntu\.com'
+    'security\.ubuntu\.com'
+    'ports\.ubuntu\.com'
+    'deb\.debian\.org'
+    'security\.debian\.org'
 )
 
 # 输出系统 codename,便于核对镜像是否覆盖当前发行版
@@ -63,19 +65,25 @@ configure_apt() {
     local f
     local domain
     local sed_args=()
+    local pattern=""
 
-    # 对每个官方域名生成替换规则,http 与 https 均升级为镜像 https
+    # 对每个官方域名生成替换规则,http 与 https 均升级为镜像 https;
+    # 以 :// 和其后的 / 作为边界,避免误改相似域名
     for domain in "${APT_OFFICIAL_DOMAINS[@]}"; do
-        sed_args+=(-e "s|http://${domain}|https://${APT_MIRROR_HOST}|g")
-        sed_args+=(-e "s|https://${domain}|https://${APT_MIRROR_HOST}|g")
+        sed_args+=(-e "s#https?://${domain}/#https://${APT_MIRROR_HOST}/#g")
+        pattern="${pattern:+$pattern|}https?://${domain}/"
     done
 
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        sudo sed -i "${sed_args[@]}" "$f"
-        printf '  updated    %s\n' "$f"
+        # 仅在文件包含官方域名时修改，重复运行或第三方源文件保持原样
+        if grep -Eq "$pattern" "$f"; then
+            sudo sed -E -i "${sed_args[@]}" "$f"
+            printf '  updated    %s\n' "$f"
+        else
+            printf '  unchanged  %s\n' "$f"
+        fi
     done < <(collect_apt_source_files)
-
 }
 
 # 重写用户 pip.conf 为本脚本管理的镜像配置，无需预先安装 pip。

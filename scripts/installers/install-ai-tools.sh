@@ -719,7 +719,7 @@ echo "======================================"
 echo " Ubuntu/Debian AI Tools Installer (Codex / Claude Code / OpenCode / ast-grep / CC Switch)"
 echo "======================================"
 
-require_non_root "bash install-ai-tools-fixed.sh"
+require_non_root "./setup.sh ai-tools"
 require_debian_like
 require_sudo "sudo was not found. Install it and grant sudo access to the current user."
 

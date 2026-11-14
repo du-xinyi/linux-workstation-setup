@@ -11,6 +11,6 @@
 脚本会生成这些文件：
 
 ```text
-vendor/Miniconda3-latest-Linux-x86_64.sh
+vendor/Miniconda3-latest-Linux-*.sh
 vendor/rustup-init.sh
 ```

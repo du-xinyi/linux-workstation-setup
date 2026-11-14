@@ -151,7 +151,9 @@ sudo add-apt-repository -y ppa:fossfreedom/indicator-sysmonitor
 print_step 3 "Adding Flathub remote"
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
-apt_get_update_step 4
+# 刚添加了 PPA，即使 setup.sh 已统一更新过索引，也需要重新刷新
+print_step 4 "Updating package indexes"
+sudo apt-get update
 
 # ubuntu-restricted-extras 会拉入 ttf-mscorefonts-installer，需预先接受微软字体 EULA 避免交互式卡住
 print_step 5 "Installing apt extras"

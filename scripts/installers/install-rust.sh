@@ -5,6 +5,8 @@
 
 set -Eeuo pipefail
 
+trap 'echo "Error: command failed at line ${LINENO}." >&2' ERR
+
 readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
@@ -12,6 +14,9 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly INSTALLER="$ROOT_DIR/vendor/rustup-init.sh"
 readonly CARGO_ENV_LINE='. "$HOME/.cargo/env"'
 rustup_args=("$@")
+
+# rustup 安装到当前用户目录，root 运行会装进 /root
+require_non_root "./setup.sh rust"
 
 # 默认使用非交互的最小安装，减少入口脚本需要传入的参数
 if [ "$#" -eq 0 ]; then

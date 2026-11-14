@@ -15,5 +15,9 @@ Thumbs.db
 .omo/
 
 # 上游安装器由 vendor/download-installers.sh 下载
-vendor/Miniconda3-latest-Linux-x86_64.sh
+vendor/Miniconda3-latest-Linux-*.sh
 vendor/rustup-init.sh
+
+# Python 缓存
+__pycache__/
+*.pyc

@@ -12,7 +12,7 @@ readonly ROOT_DIR
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-readonly SETUP_STEP_TOTAL=9
+readonly SETUP_STEP_TOTAL=8
 
 # 默认值均可通过同名环境变量覆盖
 readonly NODE_MAJOR="${NODE_MAJOR:-24}"
@@ -43,7 +43,7 @@ sudo apt-get install -y \
     gnupg \
     build-essential
 
-print_step 3 "Adding the NodeSource Node.js ${NODE_MAJOR}.x repository"
+print_step 3 "Adding the NodeSource Node.js ${NODE_MAJOR}.x and GitHub CLI repositories"
 
 # 将 NodeSource 签名密钥限制在该 apt 源范围内
 sudo install -d -m 0755 "$KEYRING_DIR"
@@ -53,10 +53,19 @@ curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
 sudo chmod 0644 "$NODESOURCE_KEYRING"
 echo "deb [signed-by=${NODESOURCE_KEYRING}] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
     | sudo tee "$NODESOURCE_LIST" >/dev/null
+
+# GitHub 发布的 keyring 已是 dearmor 后的格式
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | sudo tee "$GH_KEYRING" >/dev/null
+sudo chmod 0644 "$GH_KEYRING"
+echo "deb [arch=$(dpkg --print-architecture) signed-by=${GH_KEYRING}] https://cli.github.com/packages stable main" \
+    | sudo tee "$GH_LIST" >/dev/null
+
+# 两个新仓库添加完成后统一刷新一次索引
 sudo apt-get update
 
-print_step 4 "Installing Node.js"
-sudo apt-get install -y nodejs
+print_step 4 "Installing Node.js and GitHub CLI (gh)"
+sudo apt-get install -y nodejs gh
 
 print_step 5 "Configuring the user-level npm global directory"
 mkdir -p "$NPM_DIR"
@@ -105,17 +114,6 @@ printf 'yarn:       '; yarn --version
 printf 'TypeScript: '; tsc --version
 printf 'ESLint:     '; eslint --version
 printf 'Prettier:   '; prettier --version
-
-print_step 9 "Installing GitHub CLI (gh)"
-# GitHub 发布的 keyring 已是 dearmor 后的格式
-sudo install -d -m 0755 "$KEYRING_DIR"
-curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | sudo tee "$GH_KEYRING" >/dev/null
-sudo chmod 0644 "$GH_KEYRING"
-echo "deb [arch=$(dpkg --print-architecture) signed-by=${GH_KEYRING}] https://cli.github.com/packages stable main" \
-    | sudo tee "$GH_LIST" >/dev/null
-sudo apt-get update
-sudo apt-get install -y gh
 printf 'gh:         %s\n' "$(gh --version | head -1)"
 
 echo

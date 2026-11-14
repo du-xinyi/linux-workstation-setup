@@ -113,9 +113,11 @@ Mirrors 脚本将 apt、pip、uv 与 conda 的软件源统一配置为清华 TUN
 即可配置；全量安装也会自动执行。
 
 - **apt**：扫描 `/etc/apt/sources.list` 与 `/etc/apt/sources.list.d/` 下的 `*.list`、
-  `*.sources`（含 Ubuntu 24.04 / Debian 12 的 deb822 格式），将 `archive.ubuntu.com`、
-  `security.ubuntu.com`、`deb.debian.org`、`security.debian.org` 替换为镜像域名并升级为
-  HTTPS，路径保持不变；换源后执行一次 `apt-get update`。脚本可重复运行且幂等。
+  `*.sources`（含 Ubuntu 24.04 / Debian 12 的 deb822 格式），将 `archive.ubuntu.com`
+  （含 `cn.archive.ubuntu.com` 等国家子域名）、`security.ubuntu.com`、`ports.ubuntu.com`
+  （arm64 等架构）、`deb.debian.org`、`security.debian.org` 替换为镜像域名并升级为
+  HTTPS，路径保持不变；换源后执行一次 `apt-get update`。脚本可重复运行且幂等，
+  不含官方域名的源文件（如第三方仓库）保持不变。
 - **pip**：写入 `~/.config/pip/pip.conf`（XDG 标准位置）。
 - **uv**：写入 `${XDG_CONFIG_HOME:-$HOME/.config}/uv/uv.toml`，使用 `[[index]]` 和
   `default = true` 将清华 PyPI 镜像设为默认索引，适用于 `uv pip`、`uv sync`、`uv run`
@@ -152,7 +154,7 @@ Zsh 脚本安装 Oh My Zsh 和语法高亮插件，并生成基础 Shell 与历�
 保留 `miniconda`、`conda` 作为组件别名，也支持在 `--skip` 中使用这些别名。
 脚本会在 Miniconda 安装成功后设置 `auto_activate: false`，避免启动
 Shell 时自动进入 base 环境，并根据当前 Shell 运行对应的 `conda init`。不传
-参数时默认以非交互方式安装到 `$HOME/miniconda3`；如果该目录已存在，则自动
+参数时默认以非交互方式安装到 `$HOME/miniconda3`；安装器按本机架构选择 x86_64 或 aarch64 版本；如果该目录已存在，则自动
 使用更新模式，便于重复运行。
 该组件还安装 uv/uvx，使用 [uv 官方独立安装器](https://docs.astral.sh/uv/configuration/installer/)，
 默认安装到 `$HOME/.local/bin`，通过 `UV_INSTALL_DIR` 可指定其他绝对路径。
@@ -166,8 +168,9 @@ UV_INSTALL_DIR="$HOME/tools/uv" ./setup.sh python-tools -b -p "$HOME/tools/minic
 ```
 
 Node.js、Rust 和 Python Tools 安装脚本会分别将 npm、Cargo、Conda 和 uv 所需配置
-写入当前 Shell 的配置文件：Zsh 使用 `~/.zshrc`，Bash 使用 `~/.bashrc`，
-其他 Shell 回退到 `~/.profile`。如需修改默认目录，仍可向官方安装器传入
+写入当前用户登录 Shell 的配置文件：Zsh 使用 `~/.zshrc`，Bash 使用 `~/.bashrc`，
+其他 Shell 回退到 `~/.profile`。登录 Shell 从账户数据库（`getent passwd`）读取，
+因此 `./setup.sh all` 中 Zsh 组件执行 `chsh` 后，后续组件会写入 `~/.zshrc`。如需修改默认目录，仍可向官方安装器传入
 `-p` 参数。
 
 Rust 和 Python Tools 组件依赖 `vendor/` 中的上游安装器。安装器不存在时，对应

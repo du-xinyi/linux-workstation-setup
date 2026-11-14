@@ -3,10 +3,17 @@
 set -Eeuo pipefail
 
 readonly VENDOR_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# Miniconda 按本机架构选择安装器；文件名与 install-python-tools.sh 保持一致。
+case "$(uname -m)" in
+    x86_64|amd64)  miniconda_arch=x86_64 ;;
+    aarch64|arm64) miniconda_arch=aarch64 ;;
+    *)             miniconda_arch="" ;;
+esac
+readonly MINICONDA_FILE="Miniconda3-latest-Linux-${miniconda_arch:-unsupported}.sh"
 readonly RUSTUP_URL="${RUSTUP_URL:-https://sh.rustup.rs}"
-readonly MINICONDA_URL="${MINICONDA_URL:-https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh}"
+readonly MINICONDA_URL="${MINICONDA_URL:-https://repo.anaconda.com/miniconda/$MINICONDA_FILE}"
 readonly RUSTUP_INSTALLER="$VENDOR_DIR/rustup-init.sh"
-readonly MINICONDA_INSTALLER="$VENDOR_DIR/Miniconda3-latest-Linux-x86_64.sh"
+readonly MINICONDA_INSTALLER="$VENDOR_DIR/$MINICONDA_FILE"
 targets=("$@")
 
 download_file() {
@@ -41,6 +48,10 @@ for target in "${targets[@]}"; do
             download_file "$RUSTUP_URL" "$RUSTUP_INSTALLER"
             ;;
         miniconda)
+            if [ -z "$miniconda_arch" ]; then
+                echo "Miniconda installer is not available for architecture: $(uname -m)" >&2
+                exit 1
+            fi
             echo "Downloading Miniconda installer:"
             echo "  $MINICONDA_URL"
             download_file "$MINICONDA_URL" "$MINICONDA_INSTALLER"
