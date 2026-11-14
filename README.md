@@ -4,7 +4,8 @@
 
 ```text
 .
-├── setup.sh                       # 统一入口
+├── setup.sh                       # 统一入口（组件表 COMPONENT_TABLE）
+├── .github/workflows/ci.yml       # 语法检查、ShellCheck 与单元测试
 ├── config/
 │   └── codex/
 │       └── AGENTS.md              # Codex 全局多 Agent 协作规范模板
@@ -32,6 +33,7 @@
 │       ├── runtime.sh             # 进度输出与运行环境检查
 │       ├── apt.sh                 # APT 包索引更新
 │       └── shell.sh               # Shell 名称与配置文件选择
+├── tests/                         # Codex 配置更新回归测试
 └── vendor/                        # 本地上游安装器目录
     ├── README.md
     └── download-installers.sh     # 下载上游安装器
@@ -382,4 +384,9 @@ ai-tools 脚本还会把 Codex 的基础配置写入 `~/.codex/config.toml`。�
 - `scripts/helpers/` 保存安装后运行的辅助程序。
 - `scripts/lib/` 保存系统检查、步骤输出、APT 更新和 Shell 配置选择等公共函数，
   通过 `common.sh` 统一加载。
-- 新增组件时，同时更新 `setup.sh` 的命令分派和本文件的目录说明。
+- 组件信息集中在 `setup.sh` 顶部的 `COMPONENT_TABLE`（标准名、安装脚本、别名、是否需要 APT
+  索引、说明），表中顺序即 `all` 模式的安装顺序；帮助、`list`、别名解析、`--skip` 与命令分派
+  均由该表生成。新增组件时只需在表中加一行，并更新本文件的目录说明。
+- 别名既可用于 `--skip`，也可直接作为组件名运行（如 `./setup.sh c++`、`./setup.sh hf`）。
+- 修改 Codex 配置逻辑后运行 `python3 -m unittest discover -s tests`；GitHub Actions
+  （`.github/workflows/ci.yml`）会执行 Bash 语法检查、ShellCheck（error 级别）、单元测试和入口冒烟测试。

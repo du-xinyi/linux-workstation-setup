@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: |
+          for f in setup.sh scripts/lib/*.sh scripts/installers/*.sh vendor/download-installers.sh; do
+            bash -n "$f"
+          done
+
+      # ubuntu-24.04 runner 预装 shellcheck；先只拦截 error 级别，后续可收紧到 warning
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          shellcheck -x -S error setup.sh scripts/lib/*.sh scripts/installers/*.sh vendor/download-installers.sh
+
+      - name: Python syntax check
+        run: python3 -m py_compile scripts/helpers/system_status.py
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Dispatcher smoke test
+        run: |
+          ./setup.sh help >/dev/null
+          test "$(./setup.sh list | head -1)" = all
+          ! ./setup.sh all --skip not-a-component 2>/dev/null
