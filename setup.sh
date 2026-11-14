@@ -33,6 +33,7 @@ Components:
   cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal + common libs
   python          Install system Python tools and common libraries using apt
   python-tools    Install Miniconda and uv (aliases: miniconda, conda)
+  hugging-face    Install Hugging Face CLI (hf; alias: hf) using uv
   simulators      Install and configure simulators (currently MuJoCo; alias: mujoco)
   extras          Install extra applications
   list            List available components
@@ -52,6 +53,7 @@ Examples:
   ./setup.sh cpp
   ./setup.sh python
   ./setup.sh python-tools
+  ./setup.sh hugging-face
   ./setup.sh simulators
   ./setup.sh extras
   ./setup.sh mirrors
@@ -60,7 +62,7 @@ EOF
 
 # 每行输出一个标准组件名，便于终端查看和脚本读取。
 list_components() {
-    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools simulators extras fcitx5-rime
+    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools hugging-face simulators extras fcitx5-rime
 }
 
 # 将跳过列表中的别名转为标准名；未知名称返回非零状态。
@@ -72,7 +74,7 @@ normalize_component() {
         cpp|cxx|c++)
             printf '%s\n' cpp
             ;;
-        git|npm|ai-tools|fonts|zsh|ruby|rust|python|python-tools|simulators|extras|fcitx5-rime)
+        git|npm|ai-tools|fonts|zsh|ruby|rust|python|python-tools|hugging-face|simulators|extras|fcitx5-rime)
             printf '%s\n' "$1"
             ;;
         rime)
@@ -80,6 +82,9 @@ normalize_component() {
             ;;
         miniconda|conda)
             printf '%s\n' python-tools
+            ;;
+        hf|huggingface)
+            printf '%s\n' hugging-face
             ;;
         mujoco)
             printf '%s\n' simulators
@@ -207,6 +212,9 @@ run_component() {
         python-tools|miniconda|conda)
             "$ROOT_DIR/scripts/installers/install-python-tools.sh" "$@"
             ;;
+        hugging-face|huggingface|hf)
+            "$ROOT_DIR/scripts/installers/install-hugging-face.sh" "$@"
+            ;;
         extras)
             "$ROOT_DIR/scripts/installers/install-extras.sh" "$@"
             ;;
@@ -269,6 +277,7 @@ readonly ALL_COMPONENTS=(
     cpp
     python
     python-tools
+    hugging-face
     simulators
     extras
     fcitx5-rime

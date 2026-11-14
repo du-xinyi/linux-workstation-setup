@@ -16,6 +16,7 @@
 │   │   ├── install-fcitx5-rime.sh
 │   │   ├── install-fonts.sh
 │   │   ├── install-git.sh
+│   │   ├── install-hugging-face.sh
 │   │   ├── install-mirrors.sh
 │   │   ├── install-nodejs.sh
 │   │   ├── install-python.sh
@@ -84,6 +85,7 @@
 ./setup.sh cpp
 ./setup.sh python
 ./setup.sh python-tools
+./setup.sh hugging-face
 ./setup.sh extras
 ```
 
@@ -98,7 +100,7 @@ Rime 自身的 Shift 中英文切换设置不变；输入法分组与其他行�
 
 统一入口会将组件名之后的参数原样传递给对应安装器。运行
 `./setup.sh help` 可查看完整帮助。不指定组件时会按开发环境优先的顺序安装全部组件：
-Mirrors、Git、Fonts、Zsh、Node.js/npm、AI Tools、Rust、Ruby、C/C++、Python、Python Tools（Miniconda/uv）、Extras、Fcitx 5 Rime。Mirrors
+Mirrors、Git、Fonts、Zsh、Node.js/npm、AI Tools、Rust、Ruby、C/C++、Python、Python Tools（Miniconda/uv）、Hugging Face、Simulators、Extras、Fcitx 5 Rime。Mirrors
 排在最前，使后续组件的包下载直接走国内镜像；由于 Zsh 脚本会生成 `~/.zshrc`，它会在
 Node.js、Rust、Ruby、C/C++ 和 Python Tools 之前运行，避免后续写入的 Shell 配置被覆盖。Rust 会在
 Ruby 之前安装，Ruby 构建时会优先加载 rustup 管理的 Cargo 环境。`all` 模式会先统一运行一次
@@ -176,6 +178,26 @@ Rust 和 Python Tools 组件依赖 `vendor/` 中的上游安装器。安装器�
 ./vendor/download-installers.sh rust
 ./vendor/download-installers.sh miniconda
 ```
+
+Hugging Face 由独立的 `hugging-face` 组件安装，别名为 `hf` 和 `huggingface`。
+脚本使用 uv 将 `huggingface_hub` 安装到隔离的工具环境，提供官方
+[`hf` CLI](https://huggingface.co/docs/huggingface_hub/guides/cli)，重复运行会升级到最新版本。
+先运行 `./setup.sh python-tools` 安装 uv；`all` 模式已按此依赖顺序执行，
+可用 `--skip hugging-face` 跳过。独立运行时也支持 PATH 中已有的 uv，
+或通过 `UV_INSTALL_DIR` 指定其目录。
+
+```bash
+./setup.sh hugging-face
+# 也可运行 ./setup.sh hf 或 ./scripts/installers/install-hugging-face.sh
+# 打开新终端后：
+hf --help
+hf auth login
+hf download gpt2 config.json
+```
+
+脚本会将 uv 工具命令目录加入当前 Shell 的配置文件，并执行 `hf version` 与
+`hf --help` 验证；不自动登录或下载模型。Python 项目如需导入 `huggingface_hub`，
+仍需在项目自己的环境中安装该依赖。
 
 仿真器由独立的 `simulators` 组件安装，目前仅包含 MuJoCo，支持 `mujoco` 别名。
 `all` 模式包含此组件，可用 `--skip simulators` 或 `--skip mujoco` 跳过。
