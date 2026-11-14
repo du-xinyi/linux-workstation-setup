@@ -187,95 +187,25 @@ validate_codex_config_value() {
     fi
 }
 
-# 从首个参数读取配置，将更新后的顶层字段写入第二个参数指定的文件。
-update_codex_top_level_config() {
+# 更新 TOML 中单个表的键，结果写入 out；table 为空串表示首个表之前的顶层键。
+# 规则参数（值为 TOML 字面量，字符串需自带引号）：
+#   set:KEY=VALUE    原位替换或补齐该键，重复出现的同名键只保留一个
+#   del:KEY          删除该键
+#   alias:OLD=NEW    将旧键名迁移为 NEW（NEW 须同时由 set 指定）
+# 键名兼容裸键、双引号键和单引号键（\047 是单引号）；表不存在时追加到文件末尾。
+toml_update_table() {
     local path="$1"
     local out="$2"
+    local table="$3"
+    shift 3
 
-    CODEX_CFG_MODEL="$CODEX_MODEL" \
-    CODEX_CFG_REASONING="$CODEX_REASONING" \
-    CODEX_CFG_SERVICE_TIER="$CODEX_SERVICE_TIER" \
-    CODEX_CFG_APPROVAL="$CODEX_APPROVAL" \
-    CODEX_CFG_SANDBOX="$CODEX_SANDBOX" \
-    awk '
-        BEGIN {
-            keys[1] = "model"
-            keys[2] = "model_reasoning_effort"
-            keys[3] = "service_tier"
-            keys[4] = "approval_policy"
-            keys[5] = "sandbox_mode"
-            values[1] = ENVIRON["CODEX_CFG_MODEL"]
-            values[2] = ENVIRON["CODEX_CFG_REASONING"]
-            values[3] = ENVIRON["CODEX_CFG_SERVICE_TIER"]
-            values[4] = ENVIRON["CODEX_CFG_APPROVAL"]
-            values[5] = ENVIRON["CODEX_CFG_SANDBOX"]
-            in_top_level = 1
+    TOML_TABLE="$table" TOML_RULES="$(printf '%s\n' "$@")" awk '
+        function key_re(k) {
+            return "^[[:space:]]*(" k "|\"" k "\"|\047" k "\047)[[:space:]]*="
         }
 
         function write_missing(    i) {
-            for (i = 1; i <= 5; i++) {
-                if (!written[i]) {
-                    print keys[i] " = \"" values[i] "\""
-                    written[i] = 1
-                }
-            }
-        }
-
-        in_top_level && /^[[:space:]]*\[/ {
-            write_missing()
-            in_top_level = 0
-        }
-
-        in_top_level {
-            for (i = 1; i <= 5; i++) {
-                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
-                    print keys[i] " = \"" values[i] "\""
-                    written[i] = 1
-                    next
-                }
-            }
-        }
-
-        { print }
-
-        END {
-            if (in_top_level) {
-                write_missing()
-            }
-        }
-    ' "$path" >"$out"
-}
-
-# 更新 agents 表；布尔值由调用方完成校验并以 TOML 字面量传入。
-update_codex_agents_config() {
-    local path="$1"
-    local out="$2"
-    local enabled_value="$3"
-    local interrupt_value="$4"
-
-    CODEX_CFG_AGENTS_ENABLED="$enabled_value" \
-    CODEX_CFG_AGENTS_MAX_THREADS="$CODEX_AGENTS_MAX_THREADS" \
-    CODEX_CFG_SUBAGENT_MODEL="$CODEX_SUBAGENT_MODEL" \
-    CODEX_CFG_SUBAGENT_REASONING="$CODEX_SUBAGENT_REASONING" \
-    CODEX_CFG_AGENTS_INTERRUPT_MESSAGE="$interrupt_value" \
-    awk '
-        BEGIN {
-            keys[1] = "enabled"
-            keys[2] = "max_concurrent_threads_per_session"
-            keys[3] = "default_subagent_model"
-            keys[4] = "default_subagent_reasoning_effort"
-            keys[5] = "interrupt_message"
-            values[1] = ENVIRON["CODEX_CFG_AGENTS_ENABLED"]
-            values[2] = ENVIRON["CODEX_CFG_AGENTS_MAX_THREADS"]
-            values[3] = "\"" ENVIRON["CODEX_CFG_SUBAGENT_MODEL"] "\""
-            values[4] = "\"" ENVIRON["CODEX_CFG_SUBAGENT_REASONING"] "\""
-            values[5] = ENVIRON["CODEX_CFG_AGENTS_INTERRUPT_MESSAGE"]
-            in_agents_table = 0
-            agents_table_found = 0
-        }
-
-        function write_missing(    i) {
-            for (i = 1; i <= 5; i++) {
+            for (i = 1; i <= n; i++) {
                 if (!written[i]) {
                     print keys[i] " = " values[i]
                     written[i] = 1
@@ -283,286 +213,162 @@ update_codex_agents_config() {
             }
         }
 
+        # 返回当前行对应的 set 规则序号；-1 表示需删除，0 表示不受管理。
+        function managed_key(    i, k) {
+            for (k in deleted) if ($0 ~ key_re(k)) return -1
+            for (i = 1; i <= n; i++) if ($0 ~ key_re(keys[i])) return i
+            for (k in alias_to) if ($0 ~ key_re(k)) return alias_to[k]
+            return 0
+        }
+
+        BEGIN {
+            table = ENVIRON["TOML_TABLE"]
+            count = split(ENVIRON["TOML_RULES"], rules, "\n")
+            n = 0
+            for (j = 1; j <= count; j++) {
+                if (rules[j] == "") continue
+                p = index(rules[j], ":")
+                op = substr(rules[j], 1, p - 1)
+                rest = substr(rules[j], p + 1)
+                q = index(rest, "=")
+                key = q ? substr(rest, 1, q - 1) : rest
+                value = q ? substr(rest, q + 1) : ""
+                if (op == "set") {
+                    keys[++n] = key
+                    values[n] = value
+                    index_of[key] = n
+                } else if (op == "del") {
+                    deleted[key] = 1
+                } else if (op == "alias") {
+                    alias_target[key] = value
+                }
+            }
+            for (k in alias_target) alias_to[k] = index_of[alias_target[k]]
+            in_table = (table == "")
+            found = in_table
+        }
+
         /^[[:space:]]*\[/ {
-            if (in_agents_table) {
-                write_missing()
+            if (in_table) write_missing()
+            if (table == "") {
+                in_table = 0
+            } else {
+                header = $0
+                sub(/[[:space:]]*#.*/, "", header)
+                in_table = (header ~ "^[[:space:]]*\\[[[:space:]]*(" table "|\"" table "\"|\047" table "\047)[[:space:]]*\\][[:space:]]*$")
+                if (in_table) found = 1
             }
-
-            table_header = $0
-            sub(/[[:space:]]*#.*/, "", table_header)
-            # TOML 表名允许裸键、双引号键和单引号键（\047 是单引号）。
-            in_agents_table = (table_header ~ /^[[:space:]]*\[[[:space:]]*(agents|"agents"|\047agents\047)[[:space:]]*\][[:space:]]*$/)
-            if (in_agents_table) {
-                agents_table_found = 1
-            }
-
             print
             next
         }
 
-        in_agents_table {
-            # max_threads 是旧版别名；统一迁移到当前正式键名，避免两个别名同时存在。
-            if ($0 ~ /^[[:space:]]*(max_threads|"max_threads"|\047max_threads\047)[[:space:]]*=/) {
-                if (!written[2]) {
-                    print keys[2] " = " values[2]
-                    written[2] = 1
+        in_table {
+            i = managed_key()
+            if (i < 0) next
+            if (i > 0) {
+                if (!written[i]) {
+                    print keys[i] " = " values[i]
+                    written[i] = 1
                 }
                 next
             }
-
-            for (i = 1; i <= 5; i++) {
-                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
-                    if (!written[i]) {
-                        print keys[i] " = " values[i]
-                        written[i] = 1
-                    }
-                    next
-                }
-            }
         }
 
         { print }
 
         END {
-            if (in_agents_table) {
+            if (in_table) {
                 write_missing()
-            } else if (!agents_table_found) {
+            } else if (!found) {
                 print ""
-                print "[agents]"
+                print "[" table "]"
                 write_missing()
             }
         }
     ' "$path" >"$out"
 }
 
-# 更新 memories 表，保留其它记忆配置及子表。
-update_codex_memories_config() {
-    local path="$1"
-    local out="$2"
+# 对暂存文件原位应用 toml_update_table，参数与其去掉 path/out 后相同。
+toml_apply() {
+    local staging="$1"
+    local tmp
+    shift
 
-    CODEX_CFG_EXTRACT_MODEL="$CODEX_EXTRACT_MODEL" \
-    CODEX_CFG_CONSOLIDATION_MODEL="$CODEX_CONSOLIDATION_MODEL" \
-    awk '
-        BEGIN {
-            keys[1] = "extract_model"
-            keys[2] = "consolidation_model"
-            values[1] = ENVIRON["CODEX_CFG_EXTRACT_MODEL"]
-            values[2] = ENVIRON["CODEX_CFG_CONSOLIDATION_MODEL"]
-            in_memories_table = 0
-            memories_table_found = 0
-        }
-
-        function write_missing(    i) {
-            for (i = 1; i <= 2; i++) {
-                if (!written[i]) {
-                    print keys[i] " = \"" values[i] "\""
-                    written[i] = 1
-                }
-            }
-        }
-
-        /^[[:space:]]*\[/ {
-            if (in_memories_table) {
-                write_missing()
-            }
-
-            table_header = $0
-            sub(/[[:space:]]*#.*/, "", table_header)
-            in_memories_table = (table_header ~ /^[[:space:]]*\[[[:space:]]*(memories|"memories"|\047memories\047)[[:space:]]*\][[:space:]]*$/)
-            if (in_memories_table) {
-                memories_table_found = 1
-            }
-
-            print
-            next
-        }
-
-        in_memories_table {
-            for (i = 1; i <= 2; i++) {
-                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
-                    if (!written[i]) {
-                        print keys[i] " = \"" values[i] "\""
-                        written[i] = 1
-                    }
-                    next
-                }
-            }
-        }
-
-        { print }
-
-        END {
-            if (in_memories_table) {
-                write_missing()
-            } else if (!memories_table_found) {
-                print ""
-                print "[memories]"
-                write_missing()
-            }
-        }
-    ' "$path" >"$out"
+    tmp="$(mktemp)"
+    if ! toml_update_table "$staging" "$tmp" "$@"; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+    cat "$tmp" >"$staging"
+    rm -f -- "$tmp"
 }
 
-# 开关必须放在 [features] 表内，不能直接当作 shell 命令运行。
-update_codex_features_config() {
-    local path="$1"
-    local out="$2"
-    local multi_agent_value="$3"
-    local memories_value="$4"
+# 将 enabled/disabled 开关转为 TOML 布尔值，写入第一个参数指定的变量。
+parse_toggle() {
+    local out_var="$1"
+    local name="$2"
+    local value="$3"
 
-    CODEX_CFG_MULTI_AGENT="$multi_agent_value" \
-    CODEX_CFG_MEMORIES="$memories_value" \
-    awk '
-        BEGIN {
-            keys[1] = "multi_agent"
-            keys[2] = "memories"
-            values[1] = ENVIRON["CODEX_CFG_MULTI_AGENT"]
-            values[2] = ENVIRON["CODEX_CFG_MEMORIES"]
-            in_features = 0
-            found_features = 0
-        }
-        function write_missing(    i) {
-            for (i = 1; i <= 2; i++) {
-                if (!written[i]) {
-                    print keys[i] " = " values[i]
-                    written[i] = 1
-                }
-            }
-        }
-        /^[[:space:]]*\[/ {
-            if (in_features) write_missing()
-            header = $0
-            sub(/[[:space:]]*#.*/, "", header)
-            in_features = (header ~ /^[[:space:]]*\[[[:space:]]*(features|"features"|\047features\047)[[:space:]]*\][[:space:]]*$/)
-            if (in_features) found_features = 1
-            print
-            next
-        }
-        in_features {
-            for (i = 1; i <= 2; i++) {
-                if ($0 ~ "^[[:space:]]*(" keys[i] "|\"" keys[i] "\"|\047" keys[i] "\047)[[:space:]]*=") {
-                    if (!written[i]) {
-                        print keys[i] " = " values[i]
-                        written[i] = 1
-                    }
-                    next
-                }
-            }
-        }
-        { print }
-        END {
-            if (in_features) {
-                write_missing()
-            } else if (!found_features) {
-                print ""
-                print "[features]"
-                write_missing()
-            }
-        }
-    ' "$path" >"$out"
+    case "$value" in
+        enabled) printf -v "$out_var" '%s' true ;;
+        disabled) printf -v "$out_var" '%s' false ;;
+        *)
+            echo "Invalid $name: $value (expected enabled or disabled)" >&2
+            return 1
+            ;;
+    esac
+}
+
+# 校验值是否属于空格分隔的候选列表。
+require_choice() {
+    local name="$1"
+    local value="$2"
+    local choices="$3"
+
+    case " $choices " in
+        *" $value "*) ;;
+        *) echo "Invalid $name: $value (expected one of: $choices)" >&2; return 1 ;;
+    esac
 }
 
 # 校验环境变量并更新用户配置；配置位置遵循 CODEX_HOME。
 configure_codex_base() {
     local codex_cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    local reasoning_levels="none minimal low medium high xhigh max ultra"
     local config_dir
     local staging
     local original_exists=0
-    local pair
     local key
-    local val
     local names
-    local agents_enabled_value
-    local agents_interrupt_value
-    local agents_tmp
-    local memories_tmp
-    local network_value
     local multi_agent_value
     local memories_value
-    local network_tmp
-    local features_tmp
-    local top_level_tmp
-    local codex_pairs=(
-        "model|$CODEX_MODEL"
-        "model_reasoning_effort|$CODEX_REASONING"
-        "service_tier|$CODEX_SERVICE_TIER"
-        "approval_policy|$CODEX_APPROVAL"
-        "sandbox_mode|$CODEX_SANDBOX"
-    )
+    local network_value
+    local agents_enabled_value
+    local agents_interrupt_value
+    local top_level_keys=(model model_reasoning_effort service_tier approval_policy sandbox_mode)
     local codex_missing=()
 
-    case "$CODEX_MULTI_AGENT" in
-        enabled) multi_agent_value="true" ;;
-        disabled) multi_agent_value="false" ;;
-        *) echo "Invalid CODEX_MULTI_AGENT: $CODEX_MULTI_AGENT (expected enabled or disabled)" >&2; return 1 ;;
-    esac
-    case "$CODEX_MEMORIES" in
-        enabled) memories_value="true" ;;
-        disabled) memories_value="false" ;;
-        *) echo "Invalid CODEX_MEMORIES: $CODEX_MEMORIES (expected enabled or disabled)" >&2; return 1 ;;
-    esac
-    case "$CODEX_SANDBOX" in
-        read-only|workspace-write|danger-full-access) ;;
-        *) echo "Invalid CODEX_SANDBOX: $CODEX_SANDBOX" >&2; return 1 ;;
-    esac
-    case "$CODEX_APPROVAL" in
-        on-request|never) ;;
-        *) echo "Invalid CODEX_APPROVAL: $CODEX_APPROVAL" >&2; return 1 ;;
-    esac
-    case "$CODEX_REASONING" in
-        none|minimal|low|medium|high|xhigh|max|ultra) ;;
-        *) echo "Invalid CODEX_REASONING: $CODEX_REASONING" >&2; return 1 ;;
-    esac
-    case "$CODEX_SUBAGENT_REASONING" in
-        none|minimal|low|medium|high|xhigh|max|ultra) ;;
-        *) echo "Invalid CODEX_SUBAGENT_REASONING: $CODEX_SUBAGENT_REASONING" >&2; return 1 ;;
-    esac
-    case "$CODEX_SERVICE_TIER" in
-        default|fast) ;;
-        *) echo "Invalid CODEX_SERVICE_TIER: $CODEX_SERVICE_TIER" >&2; return 1 ;;
-    esac
-
-    case "$CODEX_NETWORK" in
-        enabled) network_value="true" ;;
-        disabled) network_value="false" ;;
-        *)
-            echo "Invalid CODEX_NETWORK: $CODEX_NETWORK (expected enabled or disabled)" >&2
-            return 1
-            ;;
-    esac
-
-    case "$CODEX_AGENTS_ENABLED" in
-        enabled) agents_enabled_value="true" ;;
-        disabled) agents_enabled_value="false" ;;
-        *)
-            echo "Invalid CODEX_AGENTS_ENABLED: $CODEX_AGENTS_ENABLED (expected enabled or disabled)" >&2
-            return 1
-            ;;
-    esac
-
-    case "$CODEX_AGENTS_INTERRUPT_MESSAGE" in
-        enabled) agents_interrupt_value="true" ;;
-        disabled) agents_interrupt_value="false" ;;
-        *)
-            echo "Invalid CODEX_AGENTS_INTERRUPT_MESSAGE: $CODEX_AGENTS_INTERRUPT_MESSAGE (expected enabled or disabled)" >&2
-            return 1
-            ;;
-    esac
+    parse_toggle multi_agent_value CODEX_MULTI_AGENT "$CODEX_MULTI_AGENT"
+    parse_toggle memories_value CODEX_MEMORIES "$CODEX_MEMORIES"
+    parse_toggle network_value CODEX_NETWORK "$CODEX_NETWORK"
+    parse_toggle agents_enabled_value CODEX_AGENTS_ENABLED "$CODEX_AGENTS_ENABLED"
+    parse_toggle agents_interrupt_value CODEX_AGENTS_INTERRUPT_MESSAGE "$CODEX_AGENTS_INTERRUPT_MESSAGE"
+    require_choice CODEX_SANDBOX "$CODEX_SANDBOX" "read-only workspace-write danger-full-access"
+    require_choice CODEX_APPROVAL "$CODEX_APPROVAL" "on-request never"
+    require_choice CODEX_REASONING "$CODEX_REASONING" "$reasoning_levels"
+    require_choice CODEX_SUBAGENT_REASONING "$CODEX_SUBAGENT_REASONING" "$reasoning_levels"
+    require_choice CODEX_SERVICE_TIER "$CODEX_SERVICE_TIER" "default fast"
 
     if [[ ! "$CODEX_AGENTS_MAX_THREADS" =~ ^[1-9][0-9]*$ ]]; then
         echo "Invalid CODEX_AGENTS_MAX_THREADS: $CODEX_AGENTS_MAX_THREADS (expected a positive integer)" >&2
         return 1
     fi
 
-    for pair in "${codex_pairs[@]}"; do
-        key="${pair%%|*}"
-        val="${pair#*|}"
-        validate_codex_config_value "$key" "$val"
-    done
-    validate_codex_config_value "default_subagent_model" "$CODEX_SUBAGENT_MODEL"
-    validate_codex_config_value "default_subagent_reasoning_effort" "$CODEX_SUBAGENT_REASONING"
-    # validate_codex_config_value "extract_model" "$CODEX_EXTRACT_MODEL"
-    # validate_codex_config_value "consolidation_model" "$CODEX_CONSOLIDATION_MODEL"
+    # 以下值会嵌入双引号 TOML 字符串
+    validate_codex_config_value model "$CODEX_MODEL"
+    validate_codex_config_value default_subagent_model "$CODEX_SUBAGENT_MODEL"
+    validate_codex_config_value extract_model "$CODEX_EXTRACT_MODEL"
+    validate_codex_config_value consolidation_model "$CODEX_CONSOLIDATION_MODEL"
 
     config_dir="$(dirname "$codex_cfg")"
     mkdir -p "$config_dir"
@@ -581,96 +387,47 @@ configure_codex_base() {
         chmod 600 "$staging"
     fi
 
-    for pair in "${codex_pairs[@]}"; do
-        key="${pair%%|*}"
+    for key in "${top_level_keys[@]}"; do
         if ! codex_top_level_has_key "$staging" "$key"; then
-            codex_missing+=("$pair")
+            codex_missing+=("$key")
         fi
     done
 
-    top_level_tmp="$(mktemp)"
-    update_codex_top_level_config "$staging" "$top_level_tmp"
-    cat "$top_level_tmp" >"$staging"
-    rm -f -- "$top_level_tmp"
-
-    # 网络权限属于 workspace-write 沙箱表，顶层同名字符串不会被 Codex 识别
-    network_tmp="$(mktemp)"
-    awk -v value="$network_value" '
-        BEGIN {
-            before_first_table = 1
-            in_workspace_table = 0
-            workspace_table_found = 0
-            network_written = 0
-        }
-
-        /^[[:space:]]*\[/ {
-            if (in_workspace_table && !network_written) {
-                print "network_access = " value
-                network_written = 1
-            }
-
-            before_first_table = 0
-            table_header = $0
-            sub(/[[:space:]]*#.*/, "", table_header)
-            # 与 agents 表一样，识别 TOML 允许的三种表名写法。
-            in_workspace_table = (table_header ~ /^[[:space:]]*\[[[:space:]]*(sandbox_workspace_write|"sandbox_workspace_write"|\047sandbox_workspace_write\047)[[:space:]]*\][[:space:]]*$/)
-            if (in_workspace_table) {
-                workspace_table_found = 1
-            }
-
-            print
-            next
-        }
-
-        before_first_table && /^[[:space:]]*(network_access|"network_access"|\047network_access\047)[[:space:]]*=/ {
-            next
-        }
-
-        in_workspace_table && /^[[:space:]]*(network_access|"network_access"|\047network_access\047)[[:space:]]*=/ {
-            print "network_access = " value
-            network_written = 1
-            next
-        }
-
-        { print }
-
-        END {
-            if (in_workspace_table && !network_written) {
-                print "network_access = " value
-            } else if (!workspace_table_found) {
-                print ""
-                print "[sandbox_workspace_write]"
-                print "network_access = " value
-            }
-        }
-    ' "$staging" >"$network_tmp"
-    cat "$network_tmp" >"$staging"
-    rm -f -- "$network_tmp"
-
-    features_tmp="$(mktemp)"
-    update_codex_features_config "$staging" "$features_tmp" "$multi_agent_value" "$memories_value"
-    cat "$features_tmp" >"$staging"
-    rm -f -- "$features_tmp"
-
-    agents_tmp="$(mktemp)"
-    update_codex_agents_config \
-        "$staging" "$agents_tmp" "$agents_enabled_value" "$agents_interrupt_value"
-    cat "$agents_tmp" >"$staging"
-    rm -f -- "$agents_tmp"
-
-    memories_tmp="$(mktemp)"
-    update_codex_memories_config "$staging" "$memories_tmp"
-    cat "$memories_tmp" >"$staging"
-    rm -f -- "$memories_tmp"
+    # 网络权限属于 workspace-write 沙箱表，顶层同名键不会被 Codex 识别，需删除。
+    # max_threads 是旧版别名；统一迁移到当前正式键名，避免两个别名同时存在。
+    if ! toml_apply "$staging" "" \
+            "set:model=\"$CODEX_MODEL\"" \
+            "set:model_reasoning_effort=\"$CODEX_REASONING\"" \
+            "set:service_tier=\"$CODEX_SERVICE_TIER\"" \
+            "set:approval_policy=\"$CODEX_APPROVAL\"" \
+            "set:sandbox_mode=\"$CODEX_SANDBOX\"" \
+            "del:network_access" ||
+        ! toml_apply "$staging" sandbox_workspace_write \
+            "set:network_access=$network_value" ||
+        ! toml_apply "$staging" features \
+            "set:multi_agent=$multi_agent_value" \
+            "set:memories=$memories_value" ||
+        ! toml_apply "$staging" agents \
+            "set:enabled=$agents_enabled_value" \
+            "set:max_concurrent_threads_per_session=$CODEX_AGENTS_MAX_THREADS" \
+            "set:default_subagent_model=\"$CODEX_SUBAGENT_MODEL\"" \
+            "set:default_subagent_reasoning_effort=\"$CODEX_SUBAGENT_REASONING\"" \
+            "set:interrupt_message=$agents_interrupt_value" \
+            "alias:max_threads=max_concurrent_threads_per_session" ||
+        ! toml_apply "$staging" memories \
+            "set:extract_model=\"$CODEX_EXTRACT_MODEL\"" \
+            "set:consolidation_model=\"$CODEX_CONSOLIDATION_MODEL\""; then
+        echo "Failed to update Codex config; original kept: $codex_cfg" >&2
+        rm -f -- "$staging"
+        return 1
+    fi
 
     # 系统有 Python 3.11+ 时，进行标准 TOML 语法校验（Ubuntu 24.04 可用）。
-    if command -v python3 >/dev/null 2>&1; then
-        if python3 -c 'import tomllib' >/dev/null 2>&1; then
-            if ! python3 -c 'import sys,tomllib; tomllib.load(open(sys.argv[1],"rb"))' "$staging"; then
-                echo "Generated Codex config is invalid; original kept: $codex_cfg" >&2
-                rm -f -- "$staging"
-                return 1
-            fi
+    if command -v python3 >/dev/null 2>&1 && python3 -c 'import tomllib' >/dev/null 2>&1; then
+        if ! python3 -c 'import sys,tomllib; tomllib.load(open(sys.argv[1],"rb"))' "$staging"; then
+            echo "Generated Codex config is invalid; original kept: $codex_cfg" >&2
+            rm -f -- "$staging"
+            return 1
         fi
     fi
     if (( original_exists )); then
@@ -679,8 +436,7 @@ configure_codex_base() {
     mv -f -- "$staging" "$codex_cfg"
 
     if [ "${#codex_missing[@]}" -gt 0 ]; then
-        names=""
-        for pair in "${codex_missing[@]}"; do names="$names ${pair%%|*}"; done
+        names=" ${codex_missing[*]}"
         echo "Codex config -> $codex_cfg (added top-level:$names; agents and memories synchronized)"
     else
         echo "Codex config -> $codex_cfg (base, agents and memories synchronized)"
