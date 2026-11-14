@@ -752,7 +752,7 @@ print_step 4 "Installing Claude Code"
 install_claude_code
 
 print_step 5 "Installing OpenCode"
-curl -fsSL https://opencode.ai/install | bash
+curl -fsSL https://opencode.ai/v2/install | bash
 
 # MCP 服务器
 # Context7 与 Playwright 均无需凭据
