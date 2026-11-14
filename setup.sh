@@ -9,98 +9,97 @@ readonly ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/common.sh"
 
-# 输出入口用法，不执行安装或环境检查。
+# 组件表是组件信息的唯一来源，顺序即 all 模式的安装顺序（开发环境优先）：
+# Mirrors 最先换源；Zsh 生成 ~/.zshrc，须在追加 Shell 配置的组件之前；
+# Rust 先于 Ruby，使 Ruby 构建时可用 rustup 管理的 rustc。
+# 字段：标准名|安装脚本|别名（空格分隔）|需要 APT 索引（1/0）|说明
+readonly COMPONENT_TABLE=(
+    "mirrors|install-mirrors.sh|mirror apt-mirror|0|Configure Tsinghua TUNA mirrors for apt/pip/uv/conda"
+    "git|install-git.sh||1|Install Git with HTTPS and SSH support"
+    "fonts|install-fonts.sh||1|Install common Latin, programming, CJK, and Emoji fonts"
+    "zsh|install-zsh.sh||1|Install and configure Zsh, Oh My Zsh, and plugins"
+    "npm|install-nodejs.sh||1|Install Node.js, npm, gh, and common frontend CLI tools"
+    "ai-tools|install-ai-tools.sh||1|Install Codex, Claude Code, OpenCode, ast-grep, CC Switch, and MCP servers"
+    "rust|install-rust.sh||0|Install Rust using the official rustup installer"
+    "ruby|install-ruby.sh||1|Install Ruby using rbenv and ruby-build"
+    "cpp|install-cpp.sh|cxx c++|1|Install C/C++ toolchains, cross compilers, and common libraries"
+    "python|install-python.sh||1|Install system Python tools and common libraries using apt"
+    "python-tools|install-python-tools.sh|miniconda conda|0|Install Miniconda and uv"
+    "hugging-face|install-hugging-face.sh|huggingface hf|0|Install Hugging Face CLI (hf) using uv"
+    "simulators|install-simulators.sh|mujoco|1|Install and configure simulators (currently MuJoCo)"
+    "extras|install-extras.sh||1|Install extra desktop applications"
+    "fcitx5-rime|install-fcitx5-rime.sh|rime|1|Install Fcitx 5, Rime, and Rime Ice"
+)
+
+ALL_COMPONENTS=()
+declare -A COMPONENT_SCRIPT=()
+declare -A COMPONENT_ALIAS=()
+declare -A COMPONENT_NEEDS_APT=()
+declare -A COMPONENT_DESC=()
+
+# 由组件表生成查询结构；别名与标准名都映射到标准名。
+load_component_table() {
+    local row name script aliases needs_apt desc alias
+
+    for row in "${COMPONENT_TABLE[@]}"; do
+        IFS='|' read -r name script aliases needs_apt desc <<<"$row"
+        ALL_COMPONENTS+=("$name")
+        COMPONENT_SCRIPT[$name]="$script"
+        COMPONENT_NEEDS_APT[$name]="$needs_apt"
+        COMPONENT_DESC[$name]="$desc"
+        COMPONENT_ALIAS[$name]="$name"
+        for alias in $aliases; do
+            COMPONENT_ALIAS[$alias]="$name"
+        done
+    done
+    readonly ALL_COMPONENTS COMPONENT_SCRIPT COMPONENT_ALIAS COMPONENT_NEEDS_APT COMPONENT_DESC
+}
+load_component_table
+
+# 输出入口用法，不执行安装或环境检查；组件列表由组件表生成。
 usage() {
+    local row name aliases desc
+
     cat <<'EOF'
 Usage:
-  ./setup.sh
-  ./setup.sh all
-  ./setup.sh all --continue-on-error
-  ./setup.sh all --skip rust,python-tools
+  ./setup.sh [all] [--continue-on-error] [--skip <component,...>]
   ./setup.sh <component> [installer arguments...]
+  ./setup.sh list | help
 
-Components:
-  all             Install all components in the recommended order
-  mirrors         Configure Tsinghua TUNA mirrors for apt/pip/uv/conda
-  git             Install Git with HTTPS and SSH support
-  npm             Install Node.js, npm, and common frontend CLI tools
-  ai-tools        Install AI tools (Codex, Claude Code, OpenCode, ast-grep, CC Switch) and MCP servers
-  fcitx5-rime     Install Fcitx 5, Rime, and Rime Ice
-  fonts           Install common Latin, programming, CJK, and Emoji fonts
-  zsh             Install and configure Zsh, Oh My Zsh, and plugins
-  ruby            Install Ruby using rbenv and ruby-build
-  rust            Install Rust using the official rustup installer
-  cpp             Install C/C++ toolchain: amd64/arm64/armhf/riscv64 cross + bare-metal + common libs
-  python          Install system Python tools and common libraries using apt
-  python-tools    Install Miniconda and uv (aliases: miniconda, conda)
-  hugging-face    Install Hugging Face CLI (hf; alias: hf) using uv
-  simulators      Install and configure simulators (currently MuJoCo; alias: mujoco)
-  extras          Install extra applications
-  list            List available components
-  help            Show this help
+Components (in "all" install order):
+EOF
+    for row in "${COMPONENT_TABLE[@]}"; do
+        IFS='|' read -r name _ aliases _ desc <<<"$row"
+        if [ -n "$aliases" ]; then
+            desc="$desc (aliases: ${aliases// /, })"
+        fi
+        printf '  %-14s  %s\n' "$name" "$desc"
+    done
+    cat <<'EOF'
 
 Examples:
   ./setup.sh
-  ./setup.sh all
   ./setup.sh all --continue-on-error
   ./setup.sh all --skip rust,python-tools
   ./setup.sh npm
-  ./setup.sh git
-  ./setup.sh ai-tools
-  ./setup.sh zsh
-  ./setup.sh ruby
-  ./setup.sh rust
-  ./setup.sh cpp
-  ./setup.sh python
-  ./setup.sh python-tools
-  ./setup.sh hugging-face
-  ./setup.sh simulators
-  ./setup.sh extras
-  ./setup.sh mirrors
+  ./setup.sh python-tools -b -p "$HOME/tools/miniconda3"
 EOF
 }
 
 # 每行输出一个标准组件名，便于终端查看和脚本读取。
 list_components() {
-    printf '%s\n' all mirrors git fonts zsh npm ai-tools rust ruby cpp python python-tools hugging-face simulators extras fcitx5-rime
+    printf '%s\n' all "${ALL_COMPONENTS[@]}"
 }
 
-# 将跳过列表中的别名转为标准名；未知名称返回非零状态。
+# 将组件名或别名转为标准名；未知名称返回非零状态。
 normalize_component() {
-    case "$1" in
-        mirrors|apt-mirror|mirror)
-            printf '%s\n' mirrors
-            ;;
-        cpp|cxx|c++)
-            printf '%s\n' cpp
-            ;;
-        git|npm|ai-tools|fonts|zsh|ruby|rust|python|python-tools|hugging-face|simulators|extras|fcitx5-rime)
-            printf '%s\n' "$1"
-            ;;
-        rime)
-            printf '%s\n' fcitx5-rime
-            ;;
-        miniconda|conda)
-            printf '%s\n' python-tools
-            ;;
-        hf|huggingface)
-            printf '%s\n' hugging-face
-            ;;
-        mujoco)
-            printf '%s\n' simulators
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    [ -n "$1" ] && [ -n "${COMPONENT_ALIAS[$1]+set}" ] || return 1
+    printf '%s\n' "${COMPONENT_ALIAS[$1]}"
 }
 
 # 标记需要提前刷新 APT 索引的组件；换源组件另行处理。
 component_requires_apt() {
-    case "$1" in
-        git|fonts|fcitx5-rime|zsh|npm|ai-tools|ruby|cpp|python|simulators|extras) return 0 ;;
-        *) return 1 ;;
-    esac
+    [ "${COMPONENT_NEEDS_APT[$1]:-0}" = "1" ]
 }
 
 # 查询已归一化的跳过列表，不修改安装顺序。
@@ -172,61 +171,16 @@ update_package_indexes_once() {
 
 # 以独立进程执行安装器，保留参数边界并向调用方传递退出状态。
 run_component() {
-    local component="$1"
+    local component
+
+    if ! component="$(normalize_component "$1")"; then
+        printf 'Unknown component: %s\n\n' "$1" >&2
+        usage >&2
+        exit 2
+    fi
     shift
 
-    case "$component" in
-        mirrors)
-            "$ROOT_DIR/scripts/installers/install-mirrors.sh" "$@"
-            ;;
-        git)
-            "$ROOT_DIR/scripts/installers/install-git.sh" "$@"
-            ;;
-        npm)
-            "$ROOT_DIR/scripts/installers/install-nodejs.sh" "$@"
-            ;;
-        ai-tools)
-            "$ROOT_DIR/scripts/installers/install-ai-tools.sh" "$@"
-            ;;
-        fcitx5-rime|rime)
-            "$ROOT_DIR/scripts/installers/install-fcitx5-rime.sh" "$@"
-            ;;
-        fonts)
-            "$ROOT_DIR/scripts/installers/install-fonts.sh" "$@"
-            ;;
-        zsh)
-            "$ROOT_DIR/scripts/installers/install-zsh.sh" "$@"
-            ;;
-        ruby)
-            "$ROOT_DIR/scripts/installers/install-ruby.sh" "$@"
-            ;;
-        rust)
-            "$ROOT_DIR/scripts/installers/install-rust.sh" "$@"
-            ;;
-        cpp)
-            "$ROOT_DIR/scripts/installers/install-cpp.sh" "$@"
-            ;;
-        python)
-            "$ROOT_DIR/scripts/installers/install-python.sh" "$@"
-            ;;
-        python-tools|miniconda|conda)
-            "$ROOT_DIR/scripts/installers/install-python-tools.sh" "$@"
-            ;;
-        hugging-face|huggingface|hf)
-            "$ROOT_DIR/scripts/installers/install-hugging-face.sh" "$@"
-            ;;
-        extras)
-            "$ROOT_DIR/scripts/installers/install-extras.sh" "$@"
-            ;;
-        simulators|mujoco)
-            "$ROOT_DIR/scripts/installers/install-simulators.sh" "$@"
-            ;;
-        *)
-            printf 'Unknown component: %s\n\n' "$component" >&2
-            usage >&2
-            exit 2
-            ;;
-    esac
+    "$ROOT_DIR/scripts/installers/${COMPONENT_SCRIPT[$component]}" "$@"
 }
 
 # 默认遇错停止；继续模式会收集失败组件，最终仍返回失败状态。
@@ -265,23 +219,6 @@ run_all() {
     printf '\nAll components installed successfully.\n'
 }
 
-readonly ALL_COMPONENTS=(
-    mirrors
-    git
-    fonts
-    zsh
-    npm
-    ai-tools
-    rust
-    ruby
-    cpp
-    python
-    python-tools
-    hugging-face
-    simulators
-    extras
-    fcitx5-rime
-)
 SKIP_COMPONENTS=()
 
 if [ "$#" -eq 0 ]; then
